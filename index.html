@@ -1,40 +1,1421 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KPSS Tarih - İnteraktif Harita</title>
-    <!-- Leaflet Harita Kütüphanesi CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Türk Tarihi Atlası — KPSS Tarih İnteraktif Harita</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&family=Noto+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --gold:#c9a84c;--gold-dim:rgba(201,168,76,0.3);--gold-bright:#e8c55a;
+  --bg-dark:#080c14;--bg-mid:#0e1520;--bg-light:#141e2e;
+  --text:#ddd5c4;--text-dim:rgba(221,213,196,0.5);
+  --red:#d94040;--red-dim:rgba(217,64,64,0.3);
+  --turk:#c9a84c;--enemy:#7a8ba0;
+  --blue:#4a7ab5;--green:#4a9;--purple:#8a6abf;
+}
+html,body{height:100%;overflow:hidden;background:var(--bg-dark);color:var(--text);font-family:'Crimson Text',Georgia,serif}
+#app{display:flex;flex-direction:column;height:100vh}
+
+/* HEADER */
+#header{flex-shrink:0;padding:8px 20px;display:flex;align-items:center;justify-content:space-between;
+  background:linear-gradient(90deg,rgba(201,168,76,0.08),rgba(201,168,76,0.03),rgba(201,168,76,0.08));
+  border-bottom:1px solid var(--gold-dim);z-index:20}
+#header h1{font-family:'Cinzel',serif;font-size:16px;font-weight:700;color:var(--gold);letter-spacing:4px;text-transform:uppercase}
+#header .sub{font-size:10px;color:var(--text-dim);letter-spacing:1.5px;margin-top:2px}
+#era-badge{padding:6px 16px;background:rgba(201,168,76,0.1);border:1px solid var(--gold-dim);border-radius:4px;
+  font-family:'Cinzel',serif;font-size:13px;color:var(--gold);text-align:center;max-width:400px;
+  animation:glowPulse 3s infinite}
+
+/* MAIN AREA */
+#main{flex:1;display:flex;overflow:hidden;position:relative}
+
+/* MAP */
+#map-container{flex:1;position:relative;overflow:hidden;background:var(--bg-dark)}
+#map-bg{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;opacity:0.12;
+  filter:hue-rotate(30deg) saturate(0.5) brightness(0.8)}
+#map-overlay{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+#map-overlay *{pointer-events:auto}
+
+.state-marker{position:absolute;transform:translate(-50%,-50%);cursor:pointer;z-index:5;transition:all 0.3s}
+.state-marker:hover{z-index:10;transform:translate(-50%,-50%) scale(1.2)}
+.marker-dot{width:16px;height:16px;border-radius:50%;position:relative}
+.marker-dot.turk{background:radial-gradient(circle,var(--gold-bright),var(--gold));
+  box-shadow:0 0 12px rgba(201,168,76,0.6),0 0 30px rgba(201,168,76,0.2);animation:pulse 2.5s infinite}
+.marker-dot.enemy{background:radial-gradient(circle,#9ab,var(--enemy));
+  box-shadow:0 0 8px rgba(122,139,160,0.4)}
+.marker-dot.turk-islam{background:radial-gradient(circle,#5cb85c,#3a8);
+  box-shadow:0 0 12px rgba(74,170,153,0.5);animation:pulse 2.5s infinite}
+.marker-label{position:absolute;top:-22px;left:50%;transform:translateX(-50%);white-space:nowrap;
+  font-family:'Cinzel',serif;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;
+  text-shadow:0 1px 3px rgba(0,0,0,0.8);pointer-events:none}
+.marker-label.turk{color:var(--gold)}
+.marker-label.turk-islam{color:#5cb85c}
+.marker-label.enemy{color:#9ab}
+.marker-ring{position:absolute;top:-6px;left:-6px;width:28px;height:28px;border-radius:50%;
+  border:2px solid transparent;animation:ringPulse 3s infinite}
+.marker-ring.turk{border-color:rgba(201,168,76,0.4)}
+.marker-ring.turk-islam{border-color:rgba(74,170,153,0.4)}
+
+/* WAR LINES */
+.war-line{position:absolute;z-index:3;pointer-events:none}
+.war-badge{position:absolute;transform:translate(-50%,-50%);z-index:6;cursor:pointer;
+  background:rgba(217,64,64,0.15);border:1px solid var(--red-dim);border-radius:12px;
+  padding:2px 8px;font-size:9px;color:#f87171;white-space:nowrap;
+  font-family:'Noto Sans',sans-serif;font-weight:600;animation:warPulse 2s infinite;
+  transition:all 0.2s}
+.war-badge:hover{background:rgba(217,64,64,0.3);transform:translate(-50%,-50%) scale(1.1)}
+
+/* LEGEND */
+#legend{position:absolute;top:12px;left:12px;padding:10px 14px;background:rgba(8,12,20,0.9);
+  border:1px solid var(--gold-dim);border-radius:6px;font-size:11px;z-index:10;
+  backdrop-filter:blur(10px)}
+#legend .item{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+#legend .dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+
+/* INFO BOX (bottom) */
+#info-box{position:absolute;bottom:80px;left:16px;right:16px;padding:14px 18px;
+  background:linear-gradient(135deg,rgba(8,12,20,0.94),rgba(14,21,32,0.92));
+  border:1px solid var(--gold-dim);border-radius:8px;backdrop-filter:blur(10px);
+  z-index:10;animation:fadeIn 0.4s;transition:right 0.3s}
+#info-box.shifted{right:420px}
+#info-box h2{font-family:'Cinzel',serif;font-size:15px;color:var(--gold);margin-bottom:4px;letter-spacing:1px}
+#info-box p{font-size:13px;color:rgba(221,213,196,0.7);line-height:1.5}
+#info-wars{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.info-war-tag{padding:3px 8px;background:rgba(217,64,64,0.1);border:1px solid var(--red-dim);
+  border-radius:10px;font-size:10px;color:#f87171;cursor:pointer;transition:all 0.2s;
+  font-family:'Noto Sans',sans-serif}
+.info-war-tag:hover{background:rgba(217,64,64,0.25)}
+
+/* DETAIL PANEL */
+#detail-panel{width:0;overflow:hidden;flex-shrink:0;background:linear-gradient(180deg,rgba(14,21,32,0.98),rgba(8,12,20,0.98));
+  border-left:1px solid var(--gold-dim);transition:width 0.3s;z-index:15}
+#detail-panel.open{width:400px;overflow-y:auto}
+#detail-header{padding:14px 18px;display:flex;justify-content:space-between;align-items:center;
+  border-bottom:1px solid var(--gold-dim);position:sticky;top:0;background:inherit;z-index:2}
+#detail-header h3{font-family:'Cinzel',serif;font-size:14px;letter-spacing:1px}
+#detail-close{background:none;border:1px solid rgba(221,213,196,0.2);color:var(--text);cursor:pointer;
+  padding:4px 10px;border-radius:4px;font-size:12px;transition:all 0.2s}
+#detail-close:hover{border-color:var(--gold);color:var(--gold)}
+#detail-content{padding:16px 18px}
+
+.detail-section{margin-bottom:16px}
+.detail-section-title{font-family:'Cinzel',serif;font-size:12px;color:var(--gold);letter-spacing:1.5px;
+  margin-bottom:8px;text-transform:uppercase;display:flex;align-items:center;gap:6px}
+.detail-period{background:rgba(201,168,76,0.08);border:1px solid rgba(201,168,76,0.15);
+  border-radius:6px;padding:10px 14px;margin-bottom:14px}
+.detail-period .label{font-size:10px;color:rgba(201,168,76,0.6);letter-spacing:1px}
+.detail-period .value{font-size:14px;color:var(--text);margin-top:3px}
+.tag-list{display:flex;flex-wrap:wrap;gap:5px}
+.tag{padding:3px 10px;border-radius:16px;font-size:11px;font-family:'Noto Sans',sans-serif}
+.tag.leader{background:rgba(201,168,76,0.1);border:1px solid rgba(201,168,76,0.2);color:rgba(232,200,120,0.9)}
+.tag.culture{background:rgba(138,106,191,0.1);border:1px solid rgba(138,106,191,0.25);color:rgba(196,170,255,0.9)}
+.tag.scientist{background:rgba(74,170,153,0.1);border:1px solid rgba(74,170,153,0.2);color:rgba(134,239,200,0.9)}
+.achievement-item{padding:7px 12px;margin-bottom:3px;border-left:2px solid var(--gold-dim);
+  font-size:12px;color:rgba(221,213,196,0.75);line-height:1.5;font-family:'Noto Sans',sans-serif}
+.achievement-item:nth-child(odd){background:rgba(201,168,76,0.03)}
+.event-timeline{border-left:2px solid var(--gold-dim);padding-left:14px}
+.event-item{position:relative;padding-bottom:10px;font-size:12px;color:rgba(221,213,196,0.75);
+  line-height:1.5;font-family:'Noto Sans',sans-serif}
+.event-item::before{content:'';position:absolute;left:-19px;top:5px;width:8px;height:8px;
+  border-radius:50%;background:rgba(201,168,76,0.5);border:2px solid var(--gold-dim)}
+
+/* TIMELINE */
+#timeline{flex-shrink:0;padding:8px 20px 12px;
+  background:linear-gradient(0deg,rgba(8,12,20,0.98),rgba(14,21,32,0.95));
+  border-top:1px solid var(--gold-dim);z-index:20}
+#timeline-controls{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.ctrl-btn{background:rgba(201,168,76,0.1);border:1px solid var(--gold-dim);color:var(--gold);
+  cursor:pointer;padding:5px 12px;border-radius:4px;font-family:'Cinzel',serif;font-size:13px;
+  transition:all 0.2s;user-select:none}
+.ctrl-btn:hover{background:rgba(201,168,76,0.2)}
+.ctrl-btn.play{background:rgba(74,170,153,0.15);border-color:rgba(74,170,153,0.4);color:#6ee7b7}
+.ctrl-btn.pause{background:rgba(217,64,64,0.15);border-color:rgba(217,64,64,0.4);color:#fca5a5}
+#speed-control{display:flex;align-items:center;gap:6px;margin-left:12px;font-size:11px;color:var(--text-dim)}
+#speed-slider{width:80px;accent-color:var(--gold)}
+#period-counter{font-size:11px;color:var(--text-dim);margin-left:auto}
+
+#timeline-bar{position:relative;display:flex;align-items:center;height:40px}
+#timeline-track{position:absolute;top:50%;left:0;right:0;height:2px;background:rgba(201,168,76,0.12);transform:translateY(-50%)}
+#timeline-progress{position:absolute;top:50%;left:0;height:2px;background:linear-gradient(90deg,var(--gold),var(--gold-bright));
+  transform:translateY(-50%);transition:width 0.4s}
+.timeline-dot{position:absolute;top:50%;transform:translate(-50%,-50%);cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;z-index:2;transition:all 0.3s}
+.timeline-dot .dot{width:10px;height:10px;border-radius:50%;transition:all 0.3s;
+  border:2px solid transparent}
+.timeline-dot.active .dot{width:16px;height:16px;background:var(--gold);
+  border:3px solid rgba(201,168,76,0.4);box-shadow:0 0 12px rgba(201,168,76,0.5)}
+.timeline-dot.passed .dot{background:var(--gold)}
+.timeline-dot.future .dot{background:rgba(100,116,139,0.4)}
+.timeline-dot .year-label{font-family:'Cinzel',serif;font-size:8px;margin-top:4px;
+  white-space:nowrap;transition:all 0.3s;color:var(--text-dim)}
+.timeline-dot.active .year-label{font-size:10px;color:var(--gold);font-weight:700}
+
+/* ANIMATIONS */
+@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.2);opacity:0.7}}
+@keyframes ringPulse{0%,100%{transform:scale(1);opacity:0.6}50%{transform:scale(1.5);opacity:0}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes warPulse{0%,100%{opacity:0.7}50%{opacity:1}}
+@keyframes glowPulse{0%,100%{box-shadow:0 0 10px rgba(201,168,76,0.2)}50%{box-shadow:0 0 20px rgba(201,168,76,0.5)}}
+@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+
+/* SCROLLBAR */
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:rgba(0,0,0,0.2)}
+::-webkit-scrollbar-thumb{background:rgba(201,168,76,0.3);border-radius:3px}
+
+/* WAR DETAIL */
+.war-detail-box{padding:14px;background:rgba(217,64,64,0.06);border:1px solid var(--red-dim);
+  border-radius:8px;margin-bottom:12px}
+.war-detail-box .title{font-family:'Cinzel',serif;font-size:16px;color:#f87171;margin-bottom:6px}
+.war-detail-box .meta{font-size:13px;color:var(--text);margin-bottom:4px}
+.war-detail-box .sides{margin-top:10px;font-size:12px;color:rgba(221,213,196,0.7)}
+
+@media(max-width:768px){
+  #detail-panel.open{width:100%;position:absolute;top:0;right:0;bottom:0;z-index:30}
+  #info-box.shifted{right:16px}
+  .marker-label{font-size:8px}
+  #era-badge{font-size:10px;max-width:200px}
+}
+</style>
 </head>
 <body>
+<div id="app">
+  <div id="header">
+    <div>
+      <h1>⚔ Türk Tarihi Atlası</h1>
+      <div class="sub">MÖ 220'DEN CUMHURİYET'E • KPSS TARİH İNTERAKTİF KRONOLOJİ</div>
+    </div>
+    <div id="era-badge"></div>
+  </div>
+  <div id="main">
+    <div id="map-container">
+      <img id="map-bg" src="world.svg" alt="Dünya Haritası">
+      <div id="map-overlay"></div>
+      <div id="legend">
+        <div class="item"><div class="dot" style="background:var(--gold);box-shadow:0 0 6px rgba(201,168,76,0.5)"></div><span style="color:var(--gold)">Türk Devleti</span></div>
+        <div class="item"><div class="dot" style="background:#4a9;box-shadow:0 0 6px rgba(74,170,153,0.4)"></div><span style="color:#6ee7b7">Türk-İslam Devleti</span></div>
+        <div class="item"><div class="dot" style="background:var(--enemy)"></div><span style="color:#9ab">Diğer Devletler</span></div>
+        <div class="item"><div class="dot" style="background:var(--red)"></div><span style="color:#f87171">Savaş / Çatışma</span></div>
+        <div style="margin-top:4px;color:var(--text-dim);font-size:10px;font-style:italic">Devletlere ve savaşlara tıklayın</div>
+      </div>
+      <div id="info-box">
+        <h2 id="info-era"></h2>
+        <p id="info-desc"></p>
+        <div id="info-wars"></div>
+      </div>
+    </div>
+    <div id="detail-panel">
+      <div id="detail-header">
+        <h3 id="detail-title"></h3>
+        <button id="detail-close" onclick="closePanel()">✕ Kapat</button>
+      </div>
+      <div id="detail-content"></div>
+    </div>
+  </div>
+  <div id="timeline">
+    <div id="timeline-controls">
+      <button class="ctrl-btn" onclick="prevPeriod()">◀ Geri</button>
+      <button class="ctrl-btn play" id="play-btn" onclick="togglePlay()">▶ Oynat</button>
+      <button class="ctrl-btn" onclick="nextPeriod()">İleri ▶</button>
+      <div id="speed-control">
+        <span>Hız:</span>
+        <input type="range" id="speed-slider" min="1" max="10" value="4">
+        <span id="speed-label">4s</span>
+      </div>
+      <div id="period-counter"></div>
+    </div>
+    <div id="timeline-bar"></div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// MILLER PROJECTION COORDINATE CONVERTER
+// ============================================================
+function geoToPercent(lat, lon) {
+  const xSvg = 380.19 + lon * 2.1127;
+  const latRad = lat * Math.PI / 180;
+  const yMiller = 1.25 * Math.log(Math.tan(Math.PI / 4 + 0.4 * latRad));
+  const ySvg = 278 - yMiller * 121.0;
+  // Crop view: x 300-760, y 50-400
+  const xPct = (xSvg - 300) / (760 - 300) * 100;
+  const yPct = (ySvg - 50) / (400 - 50) * 100;
+  return { x: Math.max(0, Math.min(100, xPct)), y: Math.max(0, Math.min(100, yPct)) };
+}
+
+// ============================================================
+// COMPREHENSIVE KPSS TURKISH HISTORY DATA
+// ============================================================
+const PERIODS = [
+// ——————————————— 0: ASYA HUN İMPARATORLUĞU ———————————————
+{
+  year: -220, label: "MÖ 220", era: "Büyük (Asya) Hun İmparatorluğu",
+  description: "Teoman tarafından kurulan, Mete Han döneminde en parlak çağını yaşayan tarihte bilinen ilk büyük Türk devleti. Ordu-Millet anlayışını ilk uygulayan devlettir.",
+  states: [
+    { name:"Büyük Hun İmp.", type:"turk", lat:47, lon:104, capital:"Ötüken",
+      details:{
+        period:"MÖ 220 – MS 216", capital:"Ötüken",
+        leaders:["Teoman (İlk hükümdar)","Mete Han (MÖ 209-174, En parlak dönem)","Ki-ok","Ho-han-yeh"],
+        achievements:["Tarihte bilinen ilk büyük Türk devleti","Onlu (desimal) askeri sistem – Mete Han tarafından kuruldu","İlk düzenli Türk ordusu","Boylar federasyonu sistemi (İkili Devlet Teşkilatı)","İpek Yolu'nun kontrolü ve ticareti","Çin'i vergiye bağlama (MÖ 200 Baideng/Pai-Teng)","Ordu-Millet anlayışının temeli"],
+        culture:["Gök Tanrı (Tengri) inancı","Kurgan (mezar) kültürü","At kültürü ve atlı göçebe yaşam","Hayvan üslubu sanatı (Bozkır sanatı)","Demircilik ve maden işçiliği","Halı dokumacılığı (Pazırık Halısı – dünyanın en eski halısı)","Toy (şölen) geleneği","Yuğ (cenaze) törenleri"],
+        scientists:[], 
+        events:["Teoman'ın devleti kurması (MÖ 220)","Mete Han'ın tahta çıkışı ve orduyu reorganizasyonu (MÖ 209)","Baideng (Pai-Teng) Savaşı – Çin'in vergiye bağlanması (MÖ 200)","Çin ile Heqin (barış) antlaşmaları","Doğu-Batı olarak ikiye ayrılma (MÖ 48)","Kuzey Hunların batıya göçü (MS 1. yy)","Güney Hunların Çin hakimiyetine girmesi"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"Çin (Han Hanedanı)", type:"enemy", lat:35, lon:108,
+      details:{
+        period:"MÖ 206 – MS 220", capital:"Chang'an (Xi'an)",
+        leaders:["Liu Bang (Gaozu)","Wu Di"],
+        achievements:["Çin Seddi'nin genişletilmesi","Kağıdın icadı (Cai Lun)","İpek üretimi ve ticareti","Konfüçyüs düşüncesinin devlet ideolojisi olması"],
+        culture:["Konfüçyanizm","Taoizm","Seramik ve porselen sanatı","İpek dokumacılığı"],
+        scientists:["Cai Lun (kağıt)","Zhang Heng (sismograf, astronomi)"],
+        events:["Baideng'de Mete Han'a yenilgi (MÖ 200)","İpek Yolu'nun açılması","Hunlara karşı Çin Seddi politikası"]
+      }
+    },
+    { name:"Yüeçiler", type:"enemy", lat:38, lon:72,
+      details:{
+        period:"MÖ 2. yy", capital:"Baktriya bölgesi",
+        leaders:[],achievements:["Kuşan İmparatorluğu'nun öncüsü"],culture:["Budizm'in yayılmasına katkı"],scientists:[],
+        events:["Mete Han tarafından yenilgiye uğratılma ve batıya göç"]
+      }
+    }
+  ],
+  wars: [
+    {from:"Büyük Hun İmp.",to:"Çin (Han Hanedanı)",name:"Baideng (Pai-Teng) Muharebesi",year:"MÖ 200",result:"Hun zaferi, Çin vergiye bağlandı"},
+    {from:"Büyük Hun İmp.",to:"Yüeçiler",name:"Hun-Yüeçi Savaşları",year:"MÖ 203-174",result:"Yüeçiler batıya göç etti"}
+  ]
+},
+
+// ——————————————— 1: KAVİMLER GÖÇÜ & AVRUPA HUN ———————————————
+{
+  year: 375, label: "375", era: "Kavimler Göçü & Avrupa Hun İmparatorluğu",
+  description: "Kuzey Hunların batıya göçüyle başlayan ve tüm Avrupa'nın siyasi haritasını değiştiren Kavimler Göçü. Avrupa Hun İmparatorluğu Balamir önderliğinde kuruldu.",
+  states: [
+    { name:"Avrupa Hun İmp.", type:"turk", lat:47, lon:20, capital:"Budapeşte civarı",
+      details:{
+        period:"375 – 469", capital:"Macaristan ovası",
+        leaders:["Balamir (375, kurucusu)","Uldız (400-410)","Rua (Ruga, 422-434)","Attila (434-453, 'Tanrının Kırbacı')","Bleda (434-445, ortak hükümdar)"],
+        achievements:["Kavimler Göçü'nü başlatma (375)","Roma İmparatorluğu'nu vergiye bağlama","Avrupa'nın etnik ve siyasi haritasını değiştirme","Feodalite (Derebeylik) sisteminin dolaylı nedeni","Attila döneminde Avrupa'nın en güçlü devleti","Margus Antlaşması (441) – Doğu Roma'yı vergiye bağlama","Anatolius Antlaşması (447) – verginin 3 katına çıkarılması"],
+        culture:["Bozkır kültürünün Avrupa'ya taşınması","Silah yapım teknolojisi","Kazan kültürü","Atlı savaşçı geleneğinin Avrupa'ya etkisi"],
+        scientists:[],
+        events:["Kavimler Göçü başlangıcı (375)","Gotların, Vandalların ve diğer kavimlerin batıya göçü","Uldız'ın 'Güneş battığı yere kadar her yeri alabilirim' sözü","Margus Antlaşması (441)","I. Balkan Seferi (441-442)","Anatolius Antlaşması (447)","Galya (Fransa) Seferi – Katalaunum (Chalons) Savaşı (451)","İtalya Seferi – Papa I. Leo ile görüşme (452)","Attila'nın ölümü (453)","Devletin dağılması (469)"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"Batı Roma İmp.", type:"enemy", lat:42, lon:12,
+      details:{
+        period:"395 – 476", capital:"Roma, sonra Ravenna",
+        leaders:["Honorius","III. Valentinian"],
+        achievements:["Roma hukuku mirası","Askeri yol sistemi"],
+        culture:["Latin kültürü","Hristiyanlık"],scientists:[],
+        events:["Kavimler Göçü sonucu yıkılma (476)","Katalaunum'da Hun-Germen ittifakına karşı savaş"]
+      }
+    },
+    { name:"Doğu Roma (Bizans)", type:"enemy", lat:41, lon:29,
+      details:{
+        period:"395 – 1453", capital:"Konstantinopolis",
+        leaders:["II. Theodosius"],
+        achievements:["Konstantinopolis surları","Diplomatik gelenek"],
+        culture:["Ortodoks Hristiyanlık","Mozaik sanatı"],scientists:[],
+        events:["Attila'ya ağır vergiler ödeme","Margus ve Anatolius Antlaşmaları"]
+      }
+    },
+    { name:"Sasani İmparatorluğu", type:"enemy", lat:33, lon:52,
+      details:{
+        period:"224 – 651", capital:"Ktesifon",
+        leaders:["II. Yezdigerd"],achievements:["Zerdüştlük devlet dini"],
+        culture:["Zerdüştlük","Pers mimarisi"],scientists:["Borzuya (hekim)"],
+        events:["Hunlarla diplomatik ilişkiler"]
+      }
+    }
+  ],
+  wars: [
+    {from:"Avrupa Hun İmp.",to:"Doğu Roma (Bizans)",name:"I. Balkan Seferi",year:"441-442",result:"Margus ve Anatolius Antlaşmaları"},
+    {from:"Avrupa Hun İmp.",to:"Batı Roma İmp.",name:"Katalaunum (Chalons) Savaşı",year:"451",result:"Kararsız sonuç, Attila geri çekildi"},
+    {from:"Avrupa Hun İmp.",to:"Batı Roma İmp.",name:"İtalya Seferi",year:"452",result:"Papa ile görüşme sonrası geri dönüş"}
+  ]
+},
+
+// ——————————————— 2: I. GÖKTÜRK KAĞANLIĞI ———————————————
+{
+  year: 552, label: "552", era: "I. Göktürk Kağanlığı",
+  description: "Bumin Kağan tarafından kurulan, tarihte 'TÜRK' adını kullanan ilk devlet. Orta Asya'dan Karadeniz'e uzanan dev bir imparatorluk.",
+  states: [
+    { name:"I. Göktürk Kağanlığı", type:"turk", lat:47, lon:95, capital:"Ötüken",
+      details:{
+        period:"552 – 630", capital:"Ötüken",
+        leaders:["Bumin Kağan (552, İl Kağan – Doğu)","İstemi Yabgu (Batı)","Mukan Kağan (553-572)","Taspar Kağan"],
+        achievements:["'Türk' adını kullanan ilk devlet","İkili devlet teşkilatı (Doğu-Batı)","Göktürk (Orhun) alfabesini geliştirme","Demir madenciliği ve işçiliği (Ergenekon)","İpek Yolu ticaretinin kontrolü","Avar hakimiyetine son verme","Batıda Sasanilerle, doğuda Çin ile diplomatik ilişkiler"],
+        culture:["Gök Tanrı inancı","Orhun Alfabesi","Balbal dikme geleneği","Kurt (Börü/Asena) efsanesi","Ergenekon Destanı","Demir kültürü"],
+        scientists:[],
+        events:["Bumin Kağan'ın Avarlara karşı isyanı ve devleti kurması (552)","İstemi Yabgu'nun Sasanilerle ittifak yapması","Akhunların yıkılması (557)","Mukan Kağan döneminde en geniş sınırlar","İstemi Yabgu'nun Bizans ile ittifakı","İç karışıklıklar ve Çin etkisi","Doğu-Batı bölünmesi (582)","Doğu Göktürk'ün Çin hakimiyetine girmesi (630)"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"Sasani İmparatorluğu", type:"enemy", lat:33, lon:52,
+      details:{period:"224–651",capital:"Ktesifon",leaders:["I. Hüsrev (Anuşirvan)"],achievements:["Pers medeniyetinin son büyük temsilcisi"],culture:["Zerdüştlük"],scientists:[],events:["İstemi Yabgu ile ittifak ve sonra çatışma"]}
+    },
+    { name:"Bizans İmparatorluğu", type:"enemy", lat:41, lon:29,
+      details:{period:"330–1453",capital:"Konstantinopolis",leaders:["Justinian","II. Justin"],achievements:["Ayasofya'nın inşası (537)","Justinian Kanunları"],culture:["Ortodoks Hristiyanlık","Mozaik sanatı"],scientists:[],events:["İstemi Yabgu ile İpek Yolu ittifakı","Sasanilere karşı ortak hareket"]}
+    },
+    { name:"Avar Kağanlığı", type:"enemy", lat:47, lon:18,
+      details:{period:"562–796",capital:"Macaristan",leaders:["Bayan Kağan"],achievements:["Avrupa'da güçlü hakimiyet"],culture:["Göçebe kültürü"],scientists:[],events:["Göktürk baskısıyla batıya göç"]}
+    },
+    { name:"Çin (Kuzey Qi/Zhou)", type:"enemy", lat:36, lon:112,
+      details:{period:"6. yüzyıl",capital:"Çin",leaders:[],achievements:[],culture:[],scientists:[],events:["Göktürklere karşı savunma politikaları"]}
+    }
+  ],
+  wars: [
+    {from:"I. Göktürk Kağanlığı",to:"Avar Kağanlığı",name:"Göktürk-Avar Savaşı",year:"552",result:"Avar hakimiyeti sona erdi"},
+    {from:"I. Göktürk Kağanlığı",to:"Sasani İmparatorluğu",name:"Akhun Seferleri",year:"557-560",result:"Akhunlar yıkıldı, topraklar paylaşıldı"}
+  ]
+},
+
+// ——————————————— 3: II. GÖKTÜRK (KUTLUK) DEVLETİ ———————————————
+{
+  year: 682, label: "682", era: "II. Göktürk (Kutluk) Devleti",
+  description: "Kutluk (İlteriş) Kağan'ın Çin esaretinden kurtuluş mücadelesiyle kurulan, Orhun Yazıtları'nın dikildiği dönem.",
+  states: [
+    { name:"II. Göktürk Devleti", type:"turk", lat:48, lon:100, capital:"Ötüken",
+      details:{
+        period:"682 – 745", capital:"Ötüken",
+        leaders:["Kutluk (İlteriş) Kağan (682-692, kurucusu)","Kapgan Kağan (692-716)","Bilge Kağan (716-734)","Kül Tigin (askeri komutan)"],
+        achievements:["Çin esaretinden kurtuluş (İstiklal mücadelesi)","Orhun (Göktürk) Yazıtları – Türk tarihinin ilk yazılı belgeleri","Tonyukuk, Bilge Kağan ve Kül Tigin Anıtları","Türk tarihinin ilk siyasi vasiyetnamesi","Türk milletine seslenen ilk yazılı eserler"],
+        culture:["Orhun Yazıtları (732-735)","Göktürk Alfabesi (38 harf)","Gök Tanrı inancı","Balbal geleneği","Damgalı taşlar"],
+        scientists:["Tonyukuk (büyük devlet adamı, stratejist, danışman)","Yollug Tigin (Orhun Yazıtları'nı yazan kişi)"],
+        events:["Kutluk Kağan'ın ayaklanması ve devleti kurması (682)","Kapgan Kağan'ın genişleme savaşları","Bilge Kağan ve Kül Tigin'in iktidara gelişi (716)","Kül Tigin Anıtı'nın dikilmesi (732)","Bilge Kağan Anıtı'nın dikilmesi (735)","Tonyukuk Anıtı","Bilge Kağan'ın zehirlenerek öldürülmesi (734)","Devletin iç karışıklıklarla zayıflaması","Uygur, Basmil ve Karlukların isyanı","Devletin yıkılması (745)"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"Çin (Tang Hanedanı)", type:"enemy", lat:35, lon:112,
+      details:{period:"618–907",capital:"Chang'an",leaders:["Tang Taizong","Wu Zetian"],achievements:["Dünya medeniyetinin en parlak dönemlerinden biri","Barut, pusula, matbaa"],culture:["Budizm","Tang şiiri"],scientists:["Sun Simiao (tıp)"],events:["Göktürklere karşı sürekli savaş ve diplomasi"]}
+    },
+    { name:"Kıtan/Kırgız", type:"enemy", lat:50, lon:110,
+      details:{period:"7-8. yy",capital:"",leaders:[],achievements:[],culture:[],scientists:[],events:["Göktürklere karşı isyan girişimleri"]}
+    }
+  ],
+  wars: [
+    {from:"II. Göktürk Devleti",to:"Çin (Tang Hanedanı)",name:"Kutluk'un İstiklal Savaşı",year:"682",result:"Bağımsızlık kazanıldı"},
+    {from:"II. Göktürk Devleti",to:"Çin (Tang Hanedanı)",name:"Göktürk-Tang Savaşları",year:"682-734",result:"Uzun süreli çatışma"}
+  ]
+},
+
+// ——————————————— 4: UYGUR KAĞANLIĞI ———————————————
+{
+  year: 745, label: "745", era: "Uygur Kağanlığı",
+  description: "Yerleşik hayata geçen, şehirler kuran ve matbaayı kullanan ilk Türk devleti. Maniheizm'i kabul ederek dini dönüşüm yaşadı.",
+  states: [
+    { name:"Uygur Kağanlığı", type:"turk", lat:47, lon:100, capital:"Karabalgasun/Ordubalık",
+      details:{
+        period:"745 – 840", capital:"Karabalgasun (Ordu-Balık)",
+        leaders:["Kutluk Bilge Kül Kağan (745, kurucusu)","Moyençur (747-759)","Bögü Kağan (759-780)"],
+        achievements:["Yerleşik hayata geçen ilk Türk devleti","Şehirler kuran ilk Türk devleti (Karabalgasun, Beşbalık)","Matbaayı kullanan ilk Türk topluluğu","Uygur alfabesini geliştirme (Soğd alfabesinden)","Kağıt ve kitap üretimi","Tarım ve ticarete geçiş","Çin'e kültürel etki"],
+        culture:["Maniheizm'in kabulü (762) – İlk kez göçebelikten yerleşik dine geçiş","Budizm (daha sonra)","Fresk (duvar resmi) sanatı","Minyatür sanatı","Uygur tıp metinleri","Şehir kültürü ve mimarisi","Matbaa ve kitap kültürü"],
+        scientists:["Singku Seli Tutung (çevirmen, bilgin)"],
+        events:["II. Göktürk'ü yıkarak devleti kurma (745)","Maniheizm'in kabul edilmesi (762)","Karabalgasun'un büyük bir şehir olarak inşası","An Lushan isyanında Çin'e yardım","Kırgız saldırısı ve devletin yıkılması (840)","Uygurların güneye göçü (Turfan, Kansu)","Turfan (İdikut) Uygur Devleti'nin kurulması","Kansu Uygur Devleti'nin kurulması"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"Kırgızlar", type:"enemy", lat:52, lon:90,
+      details:{period:"840",capital:"Yenisey",leaders:[],achievements:["Uygurları yıkan güç"],culture:["Şamanizm","Göçebe kültürü"],scientists:[],events:["Uygur başkentini yakma ve devleti yıkma (840)"]}
+    },
+    { name:"Tibet İmparatorluğu", type:"enemy", lat:32, lon:88,
+      details:{period:"618-842",capital:"Lhasa",leaders:[],achievements:["Budizm merkezi"],culture:["Tibet Budizmi"],scientists:[],events:["Uygurlarla sınır çatışmaları"]}
+    }
+  ],
+  wars: [
+    {from:"Uygur Kağanlığı",to:"Kırgızlar",name:"Kırgız İstilası",year:"840",result:"Uygur Devleti yıkıldı, güneye göç"}
+  ]
+},
+
+// ——————————————— 5: İLK MÜSLÜMAN TÜRK DEVLETLERİ ———————————————
+{
+  year: 940, label: "940", era: "İlk Müslüman Türk Devletleri",
+  description: "Karahanlılar İslamiyet'i kabul eden ilk Türk devleti olurken, Gazneliler İslam'ı Hindistan'a taşıdı. Türk-İslam sentezinin temelleri atıldı.",
+  states: [
+    { name:"Karahanlılar", type:"turk-islam", lat:41, lon:72, capital:"Balasagun/Kaşgar",
+      details:{
+        period:"840 – 1212", capital:"Balasagun, Kaşgar",
+        leaders:["Bilge Kül Kadir Han","Satuk Buğra Han (İslam'ı kabul, 920)","Musa (Abdülkerim)","Tamgaç Han"],
+        achievements:["İslamiyet'i kabul eden ilk Türk devleti (920)","Türk-İslam kültürünün temellerini atma","Kutadgu Bilig (Yusuf Has Hacip, 1070)","Divanü Lugati't-Türk (Kaşgarlı Mahmut, 1074)","Atabetü'l-Hakayık (Edip Ahmed Yükneki)","Divan-ı Hikmet (Ahmed Yesevi)","Ribat (kervansaray öncüsü) sistemi","İlk Türk-İslam medreseleri"],
+        culture:["Türk-İslam sentezi","Türkçe edebiyatın başlangıcı","İslami mimari","Medrese geleneğinin temeli","Vakıf sistemi"],
+        scientists:["Kaşgarlı Mahmut (Türk dilci, Divanü Lugati't-Türk)","Yusuf Has Hacip (Kutadgu Bilig yazarı)","Edip Ahmed Yükneki (Atabetü'l-Hakayık)","Ahmed Yesevi (mutasavvıf, Divan-ı Hikmet)"],
+        events:["Satuk Buğra Han'ın İslam'ı kabulü (920)","200.000 çadırlık Türk toplulığunun İslam'a geçişi","Samanoğullarını yıkma","Doğu-Batı Karahanlılar olarak bölünme (1042)","Kaşgarlı Mahmut'un Divanü Lugati't-Türk'ü yazması (1074)"]
+      }
+    },
+    { name:"Gazneliler", type:"turk-islam", lat:33, lon:68, capital:"Gazne",
+      details:{
+        period:"963 – 1187", capital:"Gazne",
+        leaders:["Alp Tigin (963, kurucusu)","Sebük Tigin","Gazneli Mahmut (998-1030, en parlak dönem)","Sultan Mesud"],
+        achievements:["Hindistan'a 17 sefer düzenleyerek İslam'ı yayma","İslam dünyasında 'Sultan' unvanını kullanan ilk hükümdar (Gazneli Mahmut)","Abbasi halifesinden bu unvanı alma","Zengin saray kültürü","Hint hazinelerinin İslam dünyasına taşınması"],
+        culture:["Türk-İslam saray kültürü","Farsça edebiyatın desteklenmesi","Hind-İslam sentezi"],
+        scientists:["Biruni (matematik, astronomi, coğrafya – El-Kanun el-Mesudi)","Firdevsi (Şehname – Fars edebiyatı)","Utbi (tarihçi)"],
+        events:["Alp Tigin'in Gazne'yi alması (963)","Gazneli Mahmut'un 17 Hindistan seferi","Dandanakan Savaşı'nda Selçuklulara yenilgi (1040)","Hindistan'da kalıcı hakimiyet","Büyük Selçuklulara tabi olma"]
+      }
+    },
+    { name:"Tolunoğulları", type:"turk-islam", lat:30, lon:31, capital:"Kahire (Fustat)",
+      details:{
+        period:"868 – 905", capital:"Fustat (Kahire)",
+        leaders:["Ahmed bin Tolun (868-884)"],
+        achievements:["Mısır'da kurulan ilk bağımsız Türk devleti","Tuluniye Camii (Kahire'nin en eski camileri)","Mısır tarımının geliştirilmesi","Suriye'nin fethi"],
+        culture:["Türk-İslam mimarisi Mısır'da","Abbasi kültürü etkisi"],scientists:[],
+        events:["Ahmed bin Tolun'un Mısır valiliğinden bağımsızlık ilanı (868)","Tuluniye Camii'nin inşası (876-879)","Suriye'nin fethi","Abbasilerin tekrar kontrolü ele alması (905)"]
+      }
+    },
+    { name:"İhşidiler (Akşidler)", type:"turk-islam", lat:30.5, lon:32, capital:"Fustat",
+      details:{
+        period:"935 – 969", capital:"Fustat",
+        leaders:["Muhammed bin Togaç"],
+        achievements:["Mısır'daki ikinci Türk devleti","Hicaz bölgesinin kontrolü"],
+        culture:["Türk-Arap sentezi"],scientists:[],
+        events:["Fatımilerin Mısır'ı ele geçirmesiyle son buldu (969)"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"Samanoğulları", type:"enemy", lat:39, lon:67,
+      details:{period:"819-999",capital:"Buhara",leaders:[],achievements:["Fars kültürünün merkezi"],culture:["Farsça edebiyat"],scientists:["İbn-i Sina (büyümesi Saman topraklarında)"],events:["Karahanlılar tarafından yıkılma"]}
+    },
+    { name:"Abbasi Halifeliği", type:"enemy", lat:33, lon:44,
+      details:{period:"750-1258",capital:"Bağdat",leaders:["El-Kadir"],achievements:["Beytül Hikme","İslam Altın Çağı"],culture:["İslam bilim ve felsefesi"],scientists:["Harezmî","El-Biruni"],events:["Gazneli Mahmut'a Sultan unvanı verme"]}
+    }
+  ],
+  wars: [
+    {from:"Gazneliler",to:"Samanoğulları",name:"Gazne-Saman Mücadelesi",year:"999",result:"Samanoğulları yıkıldı"},
+    {from:"Karahanlılar",to:"Samanoğulları",name:"Karahanlı-Saman Savaşları",year:"990-999",result:"Samanoğulları toprakları paylaşıldı"}
+  ]
+},
+
+// ——————————————— 6: BÜYÜK SELÇUKLU İMPARATORLUĞU ———————————————
+{
+  year: 1040, label: "1040", era: "Büyük Selçuklu İmparatorluğu",
+  description: "Dandanakan Zaferi ile kurulan, Malazgirt ile Anadolu'nun kapılarını Türklere açan büyük Türk-İslam imparatorluğu.",
+  states: [
+    { name:"Büyük Selçuklu İmp.", type:"turk-islam", lat:36, lon:55, capital:"İsfahan/Rey/Nişabur",
+      details:{
+        period:"1040 – 1157", capital:"Nişabur, Rey, İsfahan",
+        leaders:["Tuğrul Bey (1040-1063, kurucusu)","Alparslan (1063-1072)","Melikşah (1072-1092, en parlak dönem)","Sultan Sencer (1118-1157, son büyük sultan)"],
+        achievements:["Dandanakan Zaferi ile kuruluş (1040)","Malazgirt Zaferi – Anadolu'nun kapısı (1071)","Abbasi Halifesi'nin koruyucusu olma","Nizamiye Medreseleri – İslam dünyasının ilk üniversiteleri","İkta (Tımar) sistemi","Divan teşkilatı ve bürokratik yapı","Atabeylik sistemi","Sultanü'l-Azam unvanı","İslam dünyasının siyasi birliğini sağlama"],
+        culture:["Türk-İslam sentezinin olgunlaşması","Medrese geleneği","Kervansaray mimarisi","Hat sanatı","Ribat ve hanlar","Selçuklu çini sanatı"],
+        scientists:["Nizamülmülk (Siyasetname yazarı, vezir)","Ömer Hayyam (matematik, astronomi, Celali Takvimi)","İmam Gazali (felsefe, kelam, İhya'u Ulumi'd-Din)","Kaşgarlı Mahmut (dönem başı)","İbn-i Sina (dönem başı)"],
+        events:["Dandanakan Savaşı – Gaznelilere karşı büyük zafer (1040)","Tuğrul Bey'in Bağdat'a girişi – Halifeyi Büveyhilerden kurtarma (1055)","Pasinler Savaşı – Bizans'a karşı ilk büyük zafer (1048)","MALAZGİRT MEYDAN MUHAREBESİ (26 Ağustos 1071)","Nizamiye Medreselerinin açılması (1067)","Celali Takvimi'nin hazırlanması (Ömer Hayyam, 1079)","Melikşah döneminde en geniş sınırlar","Sultan Sencer'in Katvan Savaşı'nda Karahitaylara yenilmesi (1141)"]
+      }
+    },
+    { name:"Karahanlılar", type:"turk-islam", lat:41, lon:72, capital:"Balasagun",
+      details:{period:"840-1212",capital:"Balasagun",leaders:["Tamgaç Han"],achievements:["Selçuklulara tabi"],culture:["Türk-İslam kültürü"],scientists:[],events:["Büyük Selçuklu hakimiyetini kabul"]}
+    }
+  ],
+  enemies: [
+    { name:"Bizans İmparatorluğu", type:"enemy", lat:41, lon:29,
+      details:{period:"330-1453",capital:"Konstantinopolis",leaders:["Romen Diyojen (IV. Romanos)"],achievements:["Anadolu'nun savunması"],culture:["Ortodoks Hristiyanlık"],scientists:[],events:["Malazgirt'te büyük yenilgi (1071) – Anadolu kaybedildi","İmparator Romen Diyojen esir alındı"]}
+    },
+    { name:"Fatımi Halifeliği", type:"enemy", lat:30, lon:31,
+      details:{period:"909-1171",capital:"Kahire",leaders:[],achievements:["El-Ezher Üniversitesi","Kahire şehrinin kurulması"],culture:["Şii İslam","Fatımi mimarisi"],scientists:["İbn el-Heysem (optik)"],events:["Selçuklularla Şii-Sünni mücadelesi"]}
+    },
+    { name:"Gazneliler", type:"turk-islam", lat:33, lon:68,
+      details:{period:"963-1187",capital:"Gazne",leaders:["Sultan Mesud"],achievements:[],culture:[],scientists:[],events:["Dandanakan'da yenilgi (1040)"]}
+    }
+  ],
+  wars: [
+    {from:"Büyük Selçuklu İmp.",to:"Gazneliler",name:"Dandanakan Meydan Muharebesi",year:"1040",result:"Selçuklu zaferi – Devlet resmen kuruldu"},
+    {from:"Büyük Selçuklu İmp.",to:"Bizans İmparatorluğu",name:"Pasinler Savaşı",year:"1048",result:"Selçuklu zaferi"},
+    {from:"Büyük Selçuklu İmp.",to:"Bizans İmparatorluğu",name:"MALAZGİRT MEYDAN MUHAREBESİ",year:"26 Ağustos 1071",result:"Büyük Selçuklu zaferi – Anadolu kapısı açıldı"},
+    {from:"Büyük Selçuklu İmp.",to:"Fatımi Halifeliği",name:"Selçuklu-Fatımi Mücadelesi",year:"1070-1171",result:"Suriye ve Filistin Selçuklu kontrolünde"}
+  ]
+},
+
+// ——————————————— 7: TÜRKİYE (ANADOLU) SELÇUKLU DEVLETİ ———————————————
+{
+  year: 1077, label: "1077", era: "Türkiye (Anadolu) Selçuklu Devleti",
+  description: "Süleyman Şah tarafından kurulan, Anadolu'yu kalıcı olarak Türk yurdu yapan devlet. I. Kılıçarslan'dan I. Alaeddin Keykubad'a parlak dönem.",
+  states: [
+    { name:"Anadolu Selçuklu", type:"turk-islam", lat:39, lon:33, capital:"İznik, sonra Konya",
+      details:{
+        period:"1077 – 1308", capital:"İznik (1077-1097), Konya (1097-1308)",
+        leaders:["Süleyman Şah (1077, kurucusu)","I. Kılıçarslan (1092-1107)","I. Mesud","II. Kılıçarslan (1155-1192)","I. İzzeddin Keykavus","I. Alaeddin Keykubad (1220-1237, en parlak dönem)","II. Gıyaseddin Keyhüsrev"],
+        achievements:["Anadolu'nun kalıcı olarak Türk yurdu haline gelmesi","Miryokefalon Zaferi (1176) – Bizans'ın Anadolu umudunu bitirdi","Antalya ve Sinop'un fethi (deniz ticareti)","Alanya'nın (Alaiye) fethi ve tersane inşası","Kervansaray ağı (ticaret yolları güvenliği)","Ahi teşkilatı (esnaf loncası)","Selçuklu hastaneleri (şifahane/darüşşifa)","Sultan Hanları ve Kervansaraylar"],
+        culture:["Selçuklu taş işçiliği ve mimarisi","Çini sanatı","Halı dokumacılığı","Minyatür sanatı","Mevlevi kültürü (Mevlana)","Ahilik teşkilatı","Tasavvuf geleneği"],
+        scientists:["Mevlana Celaleddin Rumi (1207-1273, mutasavvıf, Mesnevi)","Hacı Bektaş Veli (Bektaşilik)","Yunus Emre (şair, halk tasavvufu)","Sadreddin Konevi (filozof)","Nasreddin Hoca (halk bilgesi)"],
+        events:["I. Haçlı Seferi ve İznik'in kaybı (1097)","Başkentin Konya'ya taşınması","I. Kılıçarslan'ın Haçlılara karşı mücadelesi","MİRYOKEFALON SAVAŞI (1176) – Bizans'a büyük darbe","Sinop'un fethi (1214)","Antalya'nın fethi (1207)","Alanya'nın fethi (1221)","Yassıçemen Savaşı – Harzemşahlara karşı (1230)","KÖSEDAĞ SAVAŞI – Moğollara yenilgi (1243)","Moğol hakimiyeti altına girme","Beylikler döneminin başlangıcı","Devletin sona ermesi (1308)"]
+      }
+    },
+    { name:"Harzemşahlar", type:"turk-islam", lat:40, lon:60, capital:"Gürgenç/Ürgenç",
+      details:{period:"1097-1231",capital:"Gürgenç",leaders:["Alaeddin Muhammed","Celaleddin Mengüberti (son büyük sultan)"],achievements:["Büyük Selçuklu mirasının devamı","Celaleddin Mengüberti'nin Moğollara karşı kahramanca direniş"],culture:["Türk-İslam kültürü"],scientists:[],events:["Moğol istilasına direnme","Yassıçemen Savaşı'nda Selçuklulara yenilgi (1230)","Celaleddin'in ölümü ile devletin sonu (1231)"]}
+    }
+  ],
+  enemies: [
+    { name:"Bizans İmparatorluğu", type:"enemy", lat:41, lon:28,
+      details:{period:"330-1453",capital:"Konstantinopolis",leaders:["Manuel Komnenos"],achievements:[],culture:[],scientists:[],events:["Miryokefalon'da büyük yenilgi (1176)","Anadolu'yu kaybetme"]}
+    },
+    { name:"Haçlı Devletleri", type:"enemy", lat:34, lon:36,
+      details:{period:"1098-1291",capital:"Kudüs, Antakya",leaders:[],achievements:[],culture:["Latin-Hristiyan kültürü"],scientists:[],events:["I. Haçlı Seferi (1096-1099)","Edessa Kontluğu","Antakya Prensliği"]}
+    },
+    { name:"Moğol İmparatorluğu", type:"enemy", lat:48, lon:100,
+      details:{period:"1206-1368",capital:"Karakurum",leaders:["Cengiz Han","Baycu Noyan"],achievements:["Dünyanın en büyük kara imparatorluğu","Posta (Yam) sistemi"],culture:["Pax Mongolica","Dini hoşgörü"],scientists:[],events:["Kösedağ Savaşı'nda Selçukluları yenme (1243)","Bağdat'ı yakma (1258)"]}
+    }
+  ],
+  wars: [
+    {from:"Anadolu Selçuklu",to:"Bizans İmparatorluğu",name:"Miryokefalon Muharebesi",year:"1176",result:"Selçuklu zaferi – Bizans'ın Anadolu'yu geri alma umudu bitti"},
+    {from:"Anadolu Selçuklu",to:"Haçlı Devletleri",name:"Haçlı Seferleri Mücadelesi",year:"1097-1190",result:"Haçlılara karşı uzun mücadele"},
+    {from:"Anadolu Selçuklu",to:"Moğol İmparatorluğu",name:"Kösedağ Muharebesi",year:"1243",result:"Moğol zaferi – Selçuklu Moğol vassalı oldu"}
+  ]
+},
+
+// ——————————————— 8: BEYLİKLER DÖNEMİ & OSMANLI KURULUŞ ———————————————
+{
+  year: 1299, label: "1299", era: "Beylikler Dönemi & Osmanlı Kuruluşu",
+  description: "Moğol baskısıyla Anadolu'da Türkmen beyliklerinin ortaya çıkışı ve Osman Bey'in Söğüt'te Osmanlı Beyliği'ni kurması.",
+  states: [
+    { name:"Osmanlı Beyliği", type:"turk-islam", lat:40, lon:30, capital:"Söğüt, sonra Bursa",
+      details:{
+        period:"1299 – 1362 (Kuruluş)", capital:"Söğüt (1299), Bursa (1326)",
+        leaders:["Osman Bey (1299-1326, kurucusu)","Orhan Bey (1326-1362)"],
+        achievements:["Osmanlı Beyliği'nin kuruluşu (1299)","Bursa'nın fethi ve başkent olması (1326)","İznik'in fethi (1331)","İzmit'in fethi (1337)","Rumeli'ye ilk geçiş – Çimpe Kalesi (1353)","İlk Osmanlı medresesinin kurulması (İznik, 1330)","Yaya ve Müsellem askeri sistemi","Divan teşkilatının temeli","İlk Osmanlı akçesinin basılması (Orhan Bey)"],
+        culture:["Ahi teşkilatı etkisi","Gazi-derviş kültürü","İlk Osmanlı medreseleri","Türkmen göçebe-yerleşik sentezi"],
+        scientists:["Davud-u Kayseri (ilk Osmanlı müderrisi)","Şeyh Edebali (Osman Bey'in kayınbabası, manevi rehber)"],
+        events:["Koyunhisar (Bafeon) Savaşı – İlk Osmanlı-Bizans savaşı (1302)","Bursa'nın fethi (1326)","İznik'in fethi (1331)","Maltepe (Palekanon) Savaşı (1329)","Rumeli'ye geçiş (1353)","Ankara'nın alınması (1354)"]
+      }
+    },
+    { name:"Karamanoğulları", type:"turk-islam", lat:37.5, lon:33, capital:"Konya/Karaman",
+      details:{period:"1256-1487",capital:"Konya",leaders:["Mehmed Bey (Türkçe'yi resmi dil ilan eden)"],achievements:["Türkçe'yi resmi dil ilan etme (1277)","Anadolu'nun en güçlü beyliği"],culture:["Türkmen kültürü"],scientists:[],events:["Osmanlı ile sürekli mücadele","Türkçe'nin resmi dil ilanı (1277)"]}
+    },
+    { name:"Germiyanoğulları", type:"turk-islam", lat:39, lon:29.5, capital:"Kütahya",
+      details:{period:"1300-1429",capital:"Kütahya",leaders:[],achievements:["Kütahya bölgesinin hakimi"],culture:["Türkmen kültürü"],scientists:[],events:["Osmanlı ile çeyiz yoluyla toprak devri"]}
+    },
+    { name:"Candaroğulları", type:"turk-islam", lat:41.5, lon:34, capital:"Kastamonu/Sinop",
+      details:{period:"1292-1461",capital:"Kastamonu",leaders:[],achievements:["Karadeniz ticareti"],culture:[],scientists:[],events:["Osmanlı'ya son katılan beyliklerden"]}
+    }
+  ],
+  enemies: [
+    { name:"Bizans İmparatorluğu", type:"enemy", lat:41, lon:28.5,
+      details:{period:"330-1453",capital:"Konstantinopolis",leaders:[],achievements:[],culture:[],scientists:[],events:["Osmanlı'ya karşı sürekli toprak kaybı"]}
+    },
+    { name:"İlhanlılar (Moğol)", type:"enemy", lat:38, lon:48,
+      details:{period:"1256-1335",capital:"Tebriz",leaders:["Hülagu","Gazan Han"],achievements:["İran'da Moğol hakimiyeti"],culture:["İslam'a geçiş (Gazan Han)"],scientists:["Nasireddin Tusi (Merağa Rasathanesi)"],events:["Anadolu beyliklerinin ortaya çıkmasına neden olma"]}
+    }
+  ],
+  wars: [
+    {from:"Osmanlı Beyliği",to:"Bizans İmparatorluğu",name:"Koyunhisar (Bafeon) Savaşı",year:"1302",result:"Osmanlı zaferi – İlk büyük Bizans yenilgisi"},
+    {from:"Osmanlı Beyliği",to:"Bizans İmparatorluğu",name:"Maltepe (Palekanon) Savaşı",year:"1329",result:"Osmanlı zaferi – İznik ve İzmit yolu açıldı"}
+  ]
+},
+
+// ——————————————— 9: OSMANLI BALKANLARA AÇILIŞ ———————————————
+{
+  year: 1389, label: "1389", era: "Osmanlı Balkanlara Yayılış",
+  description: "I. Murad'ın Balkanlardaki fetihleri, Edirne'nin başkent olması, Haçlılara karşı zaferler ve Kosova Meydan Muharebesi.",
+  states: [
+    { name:"Osmanlı Devleti", type:"turk-islam", lat:42, lon:28, capital:"Edirne",
+      details:{
+        period:"1362 – 1402", capital:"Edirne (1365-1453)",
+        leaders:["I. Murad (Hüdavendigar, 1362-1389)","Yıldırım Bayezid (1389-1402)"],
+        achievements:["Edirne'nin başkent olması (1365)","Devşirme sistemi","Yeniçeri Ocağı'nın kuruluşu","Tımar (İkta) sistemi","Rumeli Beylerbeyliği","Kazaskerlik makamı","Topkapı Sarayı öncesi saray sistemi","Niğbolu Zaferi (1396)","Anadolu Türk birliğinin sağlanması"],
+        culture:["Devşirme-Yeniçeri kültürü","Fetih geleneği","Gazi-derviş sentezi","İlk Osmanlı camileri"],
+        scientists:["Kara Halil Çandarlı (ilk veziriazam)"],
+        events:["Sırpsındığı Savaşı (1364)","Çirmen Savaşı (1371)","I. KOSOVA MEYDAN MUHAREBESİ (1389)","I. Murad'ın şehit olması (1389)","Niğbolu Savaşı – Haçlılara karşı büyük zafer (1396)","İstanbul kuşatmaları (1391-1395)","ANKARA SAVAŞI – Timur'a yenilgi (1402)","Fetret Devri başlangıcı (1402)"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"Sırp-Haçlı İttifakı", type:"enemy", lat:44, lon:21,
+      details:{period:"14. yy",capital:"",leaders:["Lazar Hrebelyanoviç"],achievements:[],culture:["Ortodoks kültürü"],scientists:[],events:["I. Kosova'da yenilgi (1389)"]}
+    },
+    { name:"Haçlı İttifakı", type:"enemy", lat:46, lon:18,
+      details:{period:"1396",capital:"",leaders:["Sigismund (Macar Kralı)"],achievements:[],culture:[],scientists:[],events:["Niğbolu'da büyük yenilgi (1396)"]}
+    },
+    { name:"Bizans İmparatorluğu", type:"enemy", lat:41, lon:29,
+      details:{period:"330-1453",capital:"Konstantinopolis",leaders:[],achievements:[],culture:[],scientists:[],events:["Osmanlı kuşatmaları altında zayıflama"]}
+    },
+    { name:"Timur İmparatorluğu", type:"enemy", lat:39, lon:67,
+      details:{period:"1370-1507",capital:"Semerkant",leaders:["Timur (Aksak Timur)"],achievements:["Semerkant'ın ihtişamı","Uluğ Bey Rasathanesi"],culture:["Türk-Moğol sentezi","Minyatür sanatı"],scientists:["Uluğ Bey (astronomi)","Ali Kuşçu (matematik-astronomi)"],events:["Ankara Savaşı (1402)","Anadolu beyliklerini yeniden canlandırma"]}
+    }
+  ],
+  wars: [
+    {from:"Osmanlı Devleti",to:"Sırp-Haçlı İttifakı",name:"I. Kosova Meydan Muharebesi",year:"1389",result:"Osmanlı zaferi, I. Murad şehit oldu"},
+    {from:"Osmanlı Devleti",to:"Haçlı İttifakı",name:"Niğbolu Savaşı",year:"1396",result:"Osmanlı zaferi – Avrupa'da büyük etki"},
+    {from:"Osmanlı Devleti",to:"Timur İmparatorluğu",name:"Ankara Savaşı",year:"1402",result:"Osmanlı yenilgisi – Fetret Devri başladı"}
+  ]
+},
+
+// ——————————————— 10: FETRET DEVRİ & İSTANBUL'UN FETHİ ———————————————
+{
+  year: 1453, label: "1453", era: "İstanbul'un Fethi",
+  description: "Fetret Devri'nin ardından toparlanma ve Fatih Sultan Mehmed'in İstanbul'u fethederek Orta Çağ'ı kapatması, Yeni Çağ'ın başlaması.",
+  states: [
+    { name:"Osmanlı İmparatorluğu", type:"turk-islam", lat:41, lon:29, capital:"İstanbul",
+      details:{
+        period:"1402 – 1481", capital:"Edirne → İstanbul (1453)",
+        leaders:["I. Mehmed Çelebi (1413-1421, Fetret'i bitiren)","II. Murad (1421-1451)","Fatih Sultan Mehmed (II. Mehmed, 1451-1481)"],
+        achievements:["İSTANBUL'UN FETHİ (29 Mayıs 1453) – Orta Çağ bitti, Yeni Çağ başladı","Şahi toplarının dökümü (Fatih)","Topkapı Sarayı'nın inşası","Fatih Kanunnamesi (ilk anayasal düzenleme)","Sahn-ı Seman Medreseleri","Karadeniz'in Türk gölü olması","İtalya (Otranto) seferi (1480)","Osmanlı'nın cihan devleti olması","Fetret Devri'nin sona erdirilmesi (I. Mehmed)","Varna Savaşı zaferi (1444)","II. Kosova Savaşı zaferi (1448)"],
+        culture:["Fatih döneminde bilim ve sanat koruyuculuğu","İstanbul'un imar edilmesi","Büyük cami ve medrese yapıları","Ressamların saraya davet edilmesi (Bellini)"],
+        scientists:["Ali Kuşçu (matematik, astronomi – Semerkant'tan geldi)","Akşemseddin (hocası ve manevi rehberi)","Molla Gürani (şeyhülislam)","Molla Hüsrev (hukuk)"],
+        events:["Fetret Devri (1402-1413)","I. Mehmed'in birliği yeniden sağlaması","Şeyh Bedreddin İsyanı (1416)","Varna Savaşı (1444)","II. Kosova Savaşı (1448)","İSTANBUL'UN FETHİ (29 Mayıs 1453)","Trabzon Rum İmp.'nun fethi (1461)","Otlukbeli Savaşı – Akkoyunlulara karşı (1473)","Kırım'ın Osmanlı'ya bağlanması (1475)","Otranto'nun fethi (1480)"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"Bizans İmparatorluğu", type:"enemy", lat:41, lon:29.5,
+      details:{period:"330-1453",capital:"Konstantinopolis",leaders:["XI. Konstantin (son imparator)"],achievements:["1123 yıllık imparatorluk","Doğu Roma mirası"],culture:["Ortodoks Hristiyanlık"],scientists:[],events:["İstanbul'un düşmesi (29 Mayıs 1453)","Son İmparator Konstantin'in surda ölümü"]}
+    },
+    { name:"Haçlı İttifakı", type:"enemy", lat:46, lon:20,
+      details:{period:"1444",capital:"",leaders:["III. Vladislav (Macar-Leh Kralı)","Janos Hunyadi"],achievements:[],culture:[],scientists:[],events:["Varna'da büyük yenilgi (1444)","II. Kosova'da yenilgi (1448)"]}
+    },
+    { name:"Akkoyunlular", type:"turk-islam", lat:38, lon:44,
+      details:{period:"1340-1508",capital:"Diyarbakır/Tebriz",leaders:["Uzun Hasan"],achievements:["Doğu Anadolu hakimiyeti"],culture:["Türkmen kültürü"],scientists:[],events:["Otlukbeli'de Fatih'e yenilgi (1473)"]}
+    }
+  ],
+  wars: [
+    {from:"Osmanlı İmparatorluğu",to:"Bizans İmparatorluğu",name:"İSTANBUL'UN FETHİ",year:"29 Mayıs 1453",result:"Bizans yıkıldı, İstanbul Osmanlı başkenti oldu"},
+    {from:"Osmanlı İmparatorluğu",to:"Haçlı İttifakı",name:"Varna Savaşı",year:"1444",result:"Osmanlı zaferi"},
+    {from:"Osmanlı İmparatorluğu",to:"Haçlı İttifakı",name:"II. Kosova Savaşı",year:"1448",result:"Osmanlı zaferi – Balkan hakimiyeti kesinleşti"},
+    {from:"Osmanlı İmparatorluğu",to:"Akkoyunlular",name:"Otlukbeli Muharebesi",year:"1473",result:"Osmanlı zaferi"}
+  ]
+},
+
+// ——————————————— 11: OSMANLI YÜKSELİŞ – YAVUZ & KANUNİ ———————————————
+{
+  year: 1520, label: "1520", era: "Osmanlı Yükseliş Dönemi",
+  description: "Yavuz Sultan Selim'in Doğu seferleri ve Kanuni Sultan Süleyman'ın yarım yüzyıllık hükümranlığıyla Osmanlı'nın en parlak çağı.",
+  states: [
+    { name:"Osmanlı İmparatorluğu", type:"turk-islam", lat:39, lon:33, capital:"İstanbul",
+      details:{
+        period:"1481 – 1566", capital:"İstanbul",
+        leaders:["II. Bayezid (1481-1512)","Yavuz Sultan Selim (1512-1520)","Kanuni Sultan Süleyman (1520-1566, en uzun saltanat)"],
+        achievements:["Halifeliğin Osmanlı'ya geçmesi (1517)","Üç kıtada hakimiyet (Avrupa, Asya, Afrika)","Süleymaniye Camii ve külliyesi","Kanun-ı Osmani (hukuk sistemi)","Preveze Deniz Zaferi (1538)","Mohaç Zaferi (1526)","Hint Okyanusu'na seferler","Osmanlı donanmasının zirve dönemi","Çaldıran Zaferi (1514)","Mısır Seferi ve Memlüklerin sona ermesi (1517)","Rodos'un fethi (1522)","Bağdat'ın fethi (1534)","Zigetvar Seferi (1566)"],
+        culture:["Divan edebiyatının altın çağı (Baki, Fuzuli)","Mimar Sinan eserleri (Şehzade, Süleymaniye, Selimiye)","Ebru sanatı","Hat sanatı","Çini sanatı (İznik çinileri)","Müzik (Itri öncesi gelenek)","Nakkaşhane","Saz üslubu"],
+        scientists:["Mimar Sinan (1489-1588, mimarlık dehası)","Piri Reis (haritacılık, Kitab-ı Bahriye, 1513 dünya haritası)","Takiyüddin (astronomi, İstanbul Rasathanesi)","Matrakçı Nasuh (tarihçi, minyatürcü, matematik)","Fuzuli (şair)","Baki (Sultanü'ş-Şuara)","Barbaros Hayreddin Paşa (denizci, amiral)","Zembilli Ali Efendi (şeyhülislam)"],
+        events:["Çaldıran Savaşı – Safevilere karşı (1514)","Mercidabık Savaşı – Memlüklere karşı (1516)","Ridaniye Savaşı – Memlükler yıkıldı (1517)","Halifeliğin Osmanlı'ya geçişi (1517)","Belgrad'ın fethi (1521)","Rodos'un fethi (1522)","Mohaç Meydan Muharebesi (1526)","I. Viyana Kuşatması (1529)","Almanya Seferi (1532)","Bağdat'ın fethi (1534)","Preveze Deniz Savaşı (1538)","Trabzon-Tebriz Seferleri","Zigetvar Seferi ve Kanuni'nin vefatı (1566)"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"Safevi Devleti", type:"enemy", lat:33, lon:52,
+      details:{period:"1501-1736",capital:"Tebriz/Isfahan",leaders:["Şah İsmail"],achievements:["Şii İslam devlet yapısı","Isfahan mimarisi"],culture:["Şii İslam","Pers minyatürü"],scientists:[],events:["Çaldıran'da büyük yenilgi (1514)","Tebriz'in kaybı"]}
+    },
+    { name:"Memlük Sultanlığı", type:"enemy", lat:30, lon:31,
+      details:{period:"1250-1517",capital:"Kahire",leaders:["Kansu Gavri","Tomanbay"],achievements:["Moğolları durduran güç (1260 Ayn Calut)"],culture:["Kölemen askeri sistemi"],scientists:[],events:["Mercidabık'ta yenilgi (1516)","Ridaniye'de yıkılma (1517)"]}
+    },
+    { name:"Kutsal Roma-Germen İmp.", type:"enemy", lat:48, lon:16,
+      details:{period:"800-1806",capital:"Viyana",leaders:["V. Karl (Şarlken)"],achievements:["Avrupa'nın en büyük gücü"],culture:["Katolik kültürü"],scientists:[],events:["Mohaç'ta yenilgi (1526)","I. Viyana kuşatmasını savunma (1529)"]}
+    },
+    { name:"Venedik", type:"enemy", lat:45.4, lon:12.3,
+      details:{period:"697-1797",capital:"Venedik",leaders:[],achievements:["Akdeniz'in ticaret gücü"],culture:["Rönesans sanatı"],scientists:[],events:["Preveze'de yenilgi (1538)","Deniz hakimiyetini kaybetme"]}
+    }
+  ],
+  wars: [
+    {from:"Osmanlı İmparatorluğu",to:"Safevi Devleti",name:"Çaldıran Muharebesi",year:"1514",result:"Osmanlı zaferi – Doğu Anadolu güvence altında"},
+    {from:"Osmanlı İmparatorluğu",to:"Memlük Sultanlığı",name:"Mercidabık & Ridaniye",year:"1516-1517",result:"Memlükler yıkıldı, Halifelik Osmanlı'ya geçti"},
+    {from:"Osmanlı İmparatorluğu",to:"Kutsal Roma-Germen İmp.",name:"Mohaç Meydan Muharebesi",year:"1526",result:"Büyük Osmanlı zaferi – Macaristan Osmanlı'ya bağlandı"},
+    {from:"Osmanlı İmparatorluğu",to:"Venedik",name:"Preveze Deniz Savaşı",year:"1538",result:"Barbaros zaferi – Akdeniz Osmanlı gölü oldu"}
+  ]
+},
+
+// ——————————————— 12: SOKULLU & DURAKLAMA BAŞLANGICI ———————————————
+{
+  year: 1579, label: "1579", era: "Sokullu Dönemi & Duraklama Başlangıcı",
+  description: "Sokullu Mehmed Paşa'nın ölümüyle (1579) Osmanlı'nın Duraklama Dönemi'ne girişi. Yükseliş'in son ve duraklamanın ilk belirtileri.",
+  states: [
+    { name:"Osmanlı İmparatorluğu", type:"turk-islam", lat:39, lon:32, capital:"İstanbul",
+      details:{
+        period:"1566 – 1683", capital:"İstanbul",
+        leaders:["II. Selim (1566-1574)","III. Murad (1574-1595)","III. Mehmed","I. Ahmed (1603-1617)","IV. Murad (1623-1640)","IV. Mehmed (1648-1687)","Köprülü Mehmed Paşa (sadrazam)","Köprülü Fazıl Ahmed Paşa"],
+        achievements:["Sokullu döneminde Don-Volga Kanal projesi","Girit'in fethi (1669)","Köprülüler dönemi reformları","IV. Murad'ın Bağdat'ı geri alması (1638)","Selimiye Camii'nin tamamlanması (Mimar Sinan, 1575)"],
+        culture:["Mimar Sinan'ın son eserleri","Divan edebiyatının devamı","IV. Murad'ın kahvehane kültürünü yasaklaması","Evliya Çelebi'nin seyahatleri"],
+        scientists:["Mimar Sinan (son yılları, Selimiye Camii)","Evliya Çelebi (1611-1682, seyyah, Seyahatname)","Kâtip Çelebi (1609-1657, bilim insanı, Cihannüma)","Hezarfen Ahmed Çelebi (uçuş denemesi, 1630s)","Lagari Hasan Çelebi (roket denemesi)"],
+        events:["Sokullu Mehmed Paşa'nın ölümü – Duraklama başlangıcı (1579)","İnebahtı (Lepanto) Deniz Savaşı yenilgisi (1571)","Donanmanın 6 ayda yeniden inşası","Ferhat Paşa Antlaşması – İran'la (1590)","Celali İsyanları (1596-1610)","Hotin Seferi (1621)","IV. Murad'ın Revan Seferi (1635)","IV. Murad'ın Bağdat Seferi ve fethi (1638)","Kasr-ı Şirin Antlaşması – İran'la kalıcı barış (1639)","Girit'in fethi (1645-1669)","II. VİYANA KUŞATMASI ve başarısızlığı (1683)"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"Habsburg İmparatorluğu", type:"enemy", lat:48, lon:16,
+      details:{period:"1282-1918",capital:"Viyana",leaders:["I. Leopold"],achievements:["Kutsal İttifak kurucusu"],culture:["Barok mimari","Klasik müzik"],scientists:[],events:["II. Viyana savunması (1683)"]}
+    },
+    { name:"Safevi İranı", type:"enemy", lat:33, lon:52,
+      details:{period:"1501-1736",capital:"Isfahan",leaders:["Şah Abbas"],achievements:["Isfahan'ın imarı"],culture:["Şii İslam"],scientists:[],events:["Kasr-ı Şirin Antlaşması (1639)"]}
+    },
+    { name:"Venedik", type:"enemy", lat:45.4, lon:12.3,
+      details:{period:"697-1797",capital:"Venedik",leaders:[],achievements:["Girit savunması"],culture:[],scientists:[],events:["Girit Savaşı (1645-1669)"]}
+    },
+    { name:"Lehistan (Polonya)", type:"enemy", lat:52, lon:21,
+      details:{period:"1569-1795",capital:"Varşova",leaders:["Jan Sobieski"],achievements:[],culture:[],scientists:[],events:["II. Viyana'da Osmanlı'ya karşı müdahale (1683)"]}
+    }
+  ],
+  wars: [
+    {from:"Osmanlı İmparatorluğu",to:"Venedik",name:"İnebahtı (Lepanto) Deniz Savaşı",year:"1571",result:"Osmanlı yenilgisi – ancak donanma hızla yenilendi"},
+    {from:"Osmanlı İmparatorluğu",to:"Habsburg İmparatorluğu",name:"II. Viyana Kuşatması",year:"1683",result:"Osmanlı başarısızlığı – Gerileme dönemi başladı"},
+    {from:"Osmanlı İmparatorluğu",to:"Safevi İranı",name:"IV. Murad'ın Bağdat Seferi",year:"1638",result:"Bağdat geri alındı – Kasr-ı Şirin Antlaşması"}
+  ]
+},
+
+// ——————————————— 13: GERİLEME DÖNEMİ & KARLOFÇA ———————————————
+{
+  year: 1699, label: "1699", era: "Gerileme Dönemi & Karlofça",
+  description: "II. Viyana bozgunu sonrası Kutsal İttifak Savaşları ve Karlofça Antlaşması ile Osmanlı'nın ilk büyük toprak kayıpları.",
+  states: [
+    { name:"Osmanlı İmparatorluğu", type:"turk-islam", lat:39, lon:32, capital:"İstanbul",
+      details:{
+        period:"1683 – 1718", capital:"İstanbul",
+        leaders:["II. Mustafa (1695-1703)","III. Ahmed (1703-1730)"],
+        achievements:["Karlofça Antlaşması (1699) – İlk büyük toprak kaybı","İstanbul Antlaşması (1700) – Rusya ile","Prut Savaşı zaferi (1711)","Edirne Olayı (1703)"],
+        culture:["Lale Devri'nin öncesi","Batılılaşma tartışmaları başlangıcı"],
+        scientists:[],
+        events:["Kutsal İttifak Savaşları (1683-1699)","Mohaç yenilgisi (1687)","Zenta yenilgisi (1697)","KARLOFÇA ANTLAŞMASI (1699) – İlk toprak kaybı antlaşması","İstanbul Antlaşması – Azak kalesi Rusya'ya (1700)","Edirne Olayı – II. Mustafa tahttan indirildi (1703)","Prut Savaşı – Rusya'ya karşı zafer (1711)","Pasarofça Antlaşması – Belgrad kaybedildi (1718)"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"Kutsal İttifak", type:"enemy", lat:48, lon:16,
+      details:{period:"1684-1699",capital:"Viyana",leaders:["I. Leopold","Eugen von Savoyen"],achievements:["Osmanlı'yı geri püskürten ittifak"],culture:[],scientists:[],events:["Karlofça'da Osmanlı toprak kaybı"]}
+    },
+    { name:"Rusya Çarlığı", type:"enemy", lat:56, lon:37,
+      details:{period:"1547-1721",capital:"Moskova",leaders:["I. Petro (Büyük Petro)"],achievements:["Rusya'nın modernleşmesi","Donanma kurulması","St. Petersburg'un inşası"],culture:["Batılılaşma"],scientists:[],events:["Azak'ın alınması","Prut'ta yenilgi (1711)"]}
+    },
+    { name:"Venedik", type:"enemy", lat:45.4, lon:12.3,
+      details:{period:"697-1797",capital:"Venedik",leaders:[],achievements:[],culture:[],scientists:[],events:["Mora'yı alma (1699)","Pasarofça'da geri verme (1718)"]}
+    }
+  ],
+  wars: [
+    {from:"Osmanlı İmparatorluğu",to:"Kutsal İttifak",name:"Kutsal İttifak Savaşları",year:"1683-1699",result:"Osmanlı yenilgisi – Karlofça Antlaşması"},
+    {from:"Osmanlı İmparatorluğu",to:"Rusya Çarlığı",name:"Prut Savaşı",year:"1711",result:"Osmanlı zaferi – Azak geri alındı"}
+  ]
+},
+
+// ——————————————— 14: LALE DEVRİ & ISLAHAT HAREKETLERİ ———————————————
+{
+  year: 1730, label: "1730", era: "Lale Devri & İlk Islahat Hareketleri",
+  description: "III. Ahmed ve Nevşehirli İbrahim Paşa döneminde Batılılaşma başlangıcı, matbaanın Osmanlı'ya gelişi ve Patrona Halil İsyanı.",
+  states: [
+    { name:"Osmanlı İmparatorluğu", type:"turk-islam", lat:39, lon:32, capital:"İstanbul",
+      details:{
+        period:"1718 – 1774", capital:"İstanbul",
+        leaders:["III. Ahmed (1703-1730)","I. Mahmud (1730-1754)","III. Mustafa (1757-1774)","Nevşehirli Damat İbrahim Paşa (sadrazam)"],
+        achievements:["LALE DEVRİ (1718-1730) – İlk batılılaşma dönemi","İlk Osmanlı matbaası (İbrahim Müteferrika, 1727)","28 Çelebi Mehmed'in Paris elçiliği","Batı tarzı ilk saraylar (Sadabad Sarayı)","Çiçek aşısı uygulaması","İtfaiye teşkilatının kurulması","Hendesehane (askeri mühendishane) kurulması (1734)","Batı eserlerinin Türkçe'ye çevrisi"],
+        culture:["Lale kültürü ve estetiği","Batı sanatı etkisi başlangıcı","Çeşme mimarisi","Minyatür sanatının son büyük dönemi (Levni)","Nedim (şair, Lale Devri edebiyatı)"],
+        scientists:["İbrahim Müteferrika (1674-1745, matbaacı, yazar)","Yirmisekiz Çelebi Mehmed (diplomat, Paris sefaretnamesi)","Levni (minyatürcü)","Nedim (şair)"],
+        events:["Lale Devri başlangıcı (1718)","İlk matbaanın kurulması (1727)","Paris elçiliği ve Batı'nın incelenmesi","PATRONA HALİL İSYANI – Lale Devri sona erdi (1730)","Kapitülasyonların yaygınlaşması","Osmanlı-İran Savaşları","Belgrad'ın geri alınması (1739)","1768-1774 Osmanlı-Rus Savaşı","KÜÇÜK KAYNARCA ANTLAŞMASI (1774) – Rusya Kırım'ı aldı"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"Rusya İmparatorluğu", type:"enemy", lat:56, lon:37,
+      details:{period:"1721-1917",capital:"St. Petersburg",leaders:["II. Katerina"],achievements:["Büyük güç olarak yükseliş"],culture:["Aydınlanma Çağı etkisi"],scientists:["Lomonosov"],events:["Küçük Kaynarca Antlaşması (1774)","Kırım'ın ilhakı (1783)"]}
+    },
+    { name:"İran (Afşar/Kaçar)", type:"enemy", lat:33, lon:52,
+      details:{period:"18. yy",capital:"Isfahan/Tahran",leaders:["Nadir Şah"],achievements:["Nadir Şah'ın fetihleri"],culture:["Pers kültürü"],scientists:[],events:["Osmanlı-İran savaşları"]}
+    },
+    { name:"Avusturya", type:"enemy", lat:48, lon:16,
+      details:{period:"Habsburg",capital:"Viyana",leaders:["Maria Theresa"],achievements:[],culture:[],scientists:[],events:["Belgrad'ın el değiştirmesi"]}
+    }
+  ],
+  wars: [
+    {from:"Osmanlı İmparatorluğu",to:"Rusya İmparatorluğu",name:"1768-1774 Osmanlı-Rus Savaşı",year:"1768-1774",result:"Osmanlı yenilgisi – Küçük Kaynarca Antlaşması"},
+    {from:"Osmanlı İmparatorluğu",to:"Avusturya",name:"Osmanlı-Avusturya Savaşı",year:"1736-1739",result:"Belgrad Antlaşması – Belgrad geri alındı"}
+  ]
+},
+
+// ——————————————— 15: III. SELİM & NİZAM-I CEDİD ———————————————
+{
+  year: 1789, label: "1789", era: "III. Selim Dönemi & Nizam-ı Cedid",
+  description: "Fransız Devrimi ile aynı yılda tahta çıkan III. Selim'in kapsamlı modernleşme (Nizam-ı Cedid) çabaları ve trajik sonu.",
+  states: [
+    { name:"Osmanlı İmparatorluğu", type:"turk-islam", lat:39, lon:32, capital:"İstanbul",
+      details:{
+        period:"1789 – 1807", capital:"İstanbul",
+        leaders:["III. Selim (1789-1807)"],
+        achievements:["Nizam-ı Cedid (Yeni Düzen) ordusu – Batı tarzı ilk düzenli ordu","Avrupa'da daimi elçiliklerin açılması (Londra, Paris, Berlin, Viyana)","Batı dillerinin öğrenilmesi","Askeri okulların modernizasyonu","İrad-ı Cedid hazinesi (yeni gelir kaynağı)","Mühendishane-i Berr-i Hümayun (Kara Mühendishanesi, 1795)"],
+        culture:["Batılılaşma hareketinin derinleşmesi","III. Selim'in müzisyenliği","Avrupa diplomatik geleneğinin benimsenmesi"],
+        scientists:[],
+        events:["III. Selim'in tahta çıkışı (1789)","Nizam-ı Cedid ordusunun kurulması","Fransa'nın Mısır'ı işgali (Napolyon, 1798)","El-Ariş Antlaşması","Kabakçı Mustafa İsyanı – Nizam-ı Cedid ortadan kaldırıldı (1807)","III. Selim'in tahttan indirilmesi ve öldürülmesi","Sırp İsyanı (1804)"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"Rusya İmparatorluğu", type:"enemy", lat:56, lon:37,
+      details:{period:"1721-1917",capital:"St. Petersburg",leaders:["II. Katerina"],achievements:[],culture:[],scientists:[],events:["Kırım'ın ilhakı (1783)","Yaş Antlaşması (1792)"]}
+    },
+    { name:"Fransa (Napolyon)", type:"enemy", lat:49, lon:2,
+      details:{period:"Cumhuriyet/İmparatorluk",capital:"Paris",leaders:["Napolyon Bonaparte"],achievements:["Fransız Devrimi","Napolyon Savaşları"],culture:["Aydınlanma Çağı"],scientists:["Laplace","Lagrange"],events:["Mısır'ın işgali (1798)"]}
+    },
+    { name:"İngiltere", type:"enemy", lat:51.5, lon:-0.1,
+      details:{period:"Krallık",capital:"Londra",leaders:["III. George"],achievements:["Sanayi Devrimi başlangıcı"],culture:[],scientists:["Watt (buhar makinesi)"],events:["Mısır'da Fransızlara karşı Osmanlı ile ittifak"]}
+    }
+  ],
+  wars: [
+    {from:"Osmanlı İmparatorluğu",to:"Rusya İmparatorluğu",name:"1787-1792 Osmanlı-Rus Savaşı",year:"1787-1792",result:"Yaş Antlaşması – Kırım kaybı kesinleşti"},
+    {from:"Osmanlı İmparatorluğu",to:"Fransa (Napolyon)",name:"Mısır Seferi (Napolyon)",year:"1798-1801",result:"Fransızlar sonunda çekildi"}
+  ]
+},
+
+// ——————————————— 16: II. MAHMUD & TANZİMAT ———————————————
+{
+  year: 1839, label: "1839", era: "II. Mahmud & Tanzimat Fermanı",
+  description: "II. Mahmud'un Yeniçeri Ocağını kaldırması (Vaka-i Hayriye) ve Tanzimat Fermanı ile Osmanlı'nın anayasal dönüşümü.",
+  states: [
+    { name:"Osmanlı İmparatorluğu", type:"turk-islam", lat:39, lon:32, capital:"İstanbul",
+      details:{
+        period:"1808 – 1876", capital:"İstanbul",
+        leaders:["II. Mahmud (1808-1839)","Abdülmecid (1839-1861)","Abdülaziz (1861-1876)","Mustafa Reşid Paşa (Tanzimat mimarı)","Âli Paşa","Fuad Paşa"],
+        achievements:["Sened-i İttifak (1808) – Padişah ilk kez yetkilerini sınırlandırdı","Yeniçeri Ocağının kaldırılması – Vaka-i Hayriye (1826)","Asakir-i Mansure-i Muhammediye (yeni ordu)","TANZİMAT FERMANI (Gülhane Hatt-ı Hümayunu, 3 Kasım 1839)","ISLAHAT FERMANI (1856)","İlk nüfus sayımı (1831)","İlk posta teşkilatı (1834)","İlk gazete: Takvim-i Vekayi (1831)","Maarif-i Umumiye Nezareti (Eğitim Bakanlığı)","Meclis-i Vala (yüksek danışma meclisi)","Darülfünun (üniversite) açılması","Dolmabahçe Sarayı'nın inşası","Kırım Savaşı ve İngiltere-Fransa ittifakı","Paris Antlaşması – Osmanlı Avrupa devletler hukukuna dahil (1856)"],
+        culture:["Tanzimat edebiyatı başlangıcı","Şinasi (ilk tiyatro eseri: Şair Evlenmesi, 1859)","Namık Kemal (Vatan yahut Silistre)","Ziya Paşa","Batı tarzı eğitim kurumları","Gazete kültürünün başlaması"],
+        scientists:["Şinasi (edebiyat, gazetecilik)","Namık Kemal (edebiyat, hürriyet düşüncesi)","Ahmed Cevdet Paşa (tarihçi, hukukçu, Mecelle)","Ziya Paşa (edebiyat, düşünce)"],
+        events:["Sened-i İttifak (1808)","Yunan İsyanı (1821)","Yunanistan'ın bağımsızlığı (1829)","Navarin'de donanmanın yakılması (1827)","VAKAİ HAYRİYE – Yeniçeri Ocağının kaldırılması (1826)","Kavalalı Mehmed Ali Paşa İsyanı (1831-1833, 1839)","Kütahya ve Hünkar İskelesi Antlaşmaları","TANZİMAT FERMANI (3 Kasım 1839)","KIRIM SAVAŞI (1853-1856)","PARİS ANTLAŞMASI (1856)","ISLAHAT FERMANI (1856)","İlk dış borçlanma (1854)","Duyun-u Umumiye İdaresi (1881)"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"Rusya İmparatorluğu", type:"enemy", lat:56, lon:37,
+      details:{period:"1721-1917",capital:"St. Petersburg",leaders:["I. Nikolay"],achievements:["Panslavizm politikası"],culture:["Tolstoy dönemi"],scientists:[],events:["Kırım Savaşı'nda yenilgi (1856)","Edirne Antlaşması (1829)"]}
+    },
+    { name:"Mısır (Kavalalı)", type:"enemy", lat:30, lon:31,
+      details:{period:"1805-1882",capital:"Kahire",leaders:["Kavalalı Mehmed Ali Paşa","İbrahim Paşa"],achievements:["Mısır'ın modernleşmesi"],culture:[],scientists:[],events:["Osmanlı'ya isyan (1831, 1839)","Kütahya'ya kadar ilerleme"]}
+    },
+    { name:"Yunanistan", type:"enemy", lat:38, lon:24,
+      details:{period:"1821-",capital:"Atina",leaders:[],achievements:["Bağımsızlık hareketi"],culture:["Helen kültürü canlanması"],scientists:[],events:["Yunan İsyanı (1821)","Bağımsızlık (1829)"]}
+    },
+    { name:"İngiltere", type:"enemy", lat:51.5, lon:-0.1,
+      details:{period:"İmparatorluk",capital:"Londra",leaders:["Kraliçe Victoria"],achievements:["Sanayi Devrimi","Güneş batmayan imparatorluk"],culture:["Viktorya dönemi"],scientists:["Darwin","Faraday"],events:["Kırım'da Osmanlı müttefiki","Mısır'ın işgali (1882)"]}
+    }
+  ],
+  wars: [
+    {from:"Osmanlı İmparatorluğu",to:"Rusya İmparatorluğu",name:"Kırım Savaşı",year:"1853-1856",result:"Osmanlı (İng-Fr desteğiyle) zaferi – Paris Antlaşması"},
+    {from:"Osmanlı İmparatorluğu",to:"Mısır (Kavalalı)",name:"Osmanlı-Mısır Savaşları",year:"1831-1833, 1839-1841",result:"Büyük güçlerin müdahalesiyle çözüm"},
+    {from:"Osmanlı İmparatorluğu",to:"Yunanistan",name:"Yunan Bağımsızlık Savaşı",year:"1821-1829",result:"Yunanistan bağımsız oldu"}
+  ]
+},
+
+// ——————————————— 17: II. ABDÜLHAMİD & I. MEŞRUTİYET ———————————————
+{
+  year: 1878, label: "1878", era: "93 Harbi & I. Meşrutiyet",
+  description: "I. Meşrutiyet'in ilanı, 93 Harbi felaketi, Berlin Antlaşması ve II. Abdülhamid'in istibdat dönemi.",
+  states: [
+    { name:"Osmanlı İmparatorluğu", type:"turk-islam", lat:39, lon:32, capital:"İstanbul",
+      details:{
+        period:"1876 – 1908", capital:"İstanbul",
+        leaders:["V. Murad (3 ay)","II. Abdülhamid (1876-1909)","Mithat Paşa (Kanun-i Esasi mimarı)"],
+        achievements:["I. MEŞRUTİYET'İN İLANI (23 Aralık 1876)","Kanun-i Esasi (ilk Osmanlı Anayasası)","Meclis-i Mebusan'ın açılması","Meclisin kapatılması ve İstibdat Dönemi (1878-1908)","Hicaz Demiryolu projesi","Bağdat Demiryolu","Hamidiye Alayları","Pan-İslamizm politikası","Darüşşafaka'nın açılması","Osmanlı istihbaratının güçlendirilmesi","Eğitim reformları ve okullar"],
+        culture:["Servet-i Fünun (Edebiyat-ı Cedide) edebiyatı","Tevfik Fikret","Halit Ziya Uşaklıgil","Cenap Şehabettin","Sansür ve baskı dönemi","Jön Türkler hareketi"],
+        scientists:["Ziya Gökalp (sosyoloji, Türkçülük)","Ahmed Cevdet Paşa (Mecelle)","Tevfik Fikret (şair)","Halit Ziya Uşaklıgil (romancı, Mai ve Siyah)"],
+        events:["I. MEŞRUTİYET (23 Aralık 1876)","93 HARBİ (Osmanlı-Rus Savaşı, 1877-1878)","Plevne Savunması (Gazi Osman Paşa)","Ayastefanos Antlaşması (1878)","BERLİN ANTLAŞMASI (1878) – Büyük toprak kayıpları","Kıbrıs'ın İngiltere'ye verilmesi (1878)","Tunus'un Fransa tarafından işgali (1881)","Mısır'ın İngiltere tarafından işgali (1882)","DUYUN-U UMUMİYE İDARESİ (1881) – Mali bağımsızlığın kaybı","Ermeni olayları (1890'lar)","Osmanlı-Yunan Savaşı / Dömeke Meydan Muharebesi (1897)","Girit'in özerkliği"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"Rusya İmparatorluğu", type:"enemy", lat:56, lon:37,
+      details:{period:"1721-1917",capital:"St. Petersburg",leaders:["II. Aleksandr"],achievements:["Panslavizm"],culture:["Dostoyevski, Tolstoy"],scientists:["Mendeleyev"],events:["93 Harbi (1877-78)","Ayastefanos Antlaşması"]}
+    },
+    { name:"İngiltere", type:"enemy", lat:51.5, lon:-0.1,
+      details:{period:"İmparatorluk",capital:"Londra",leaders:["Kraliçe Victoria","Disraeli"],achievements:["Süveyş Kanalı kontrolü"],culture:[],scientists:[],events:["Kıbrıs'ın alınması (1878)","Mısır'ın işgali (1882)"]}
+    },
+    { name:"Fransa", type:"enemy", lat:49, lon:2,
+      details:{period:"3. Cumhuriyet",capital:"Paris",leaders:[],achievements:["Sömürge imparatorluğu"],culture:["Empresyonizm"],scientists:["Pasteur"],events:["Tunus'un işgali (1881)","Cezayir'in işgali (1830)"]}
+    },
+    { name:"Yunanistan", type:"enemy", lat:38, lon:24,
+      details:{period:"Krallık",capital:"Atina",leaders:[],achievements:["Megali İdea"],culture:[],scientists:[],events:["1897 Savaşı'nda yenilgi","Girit meselesi"]}
+    }
+  ],
+  wars: [
+    {from:"Osmanlı İmparatorluğu",to:"Rusya İmparatorluğu",name:"93 Harbi (Osmanlı-Rus Savaşı)",year:"1877-1878",result:"Osmanlı yenilgisi – Berlin Antlaşması, büyük toprak kaybı"},
+    {from:"Osmanlı İmparatorluğu",to:"Yunanistan",name:"1897 Osmanlı-Yunan Savaşı (Dömeke)",year:"1897",result:"Osmanlı zaferi"}
+  ]
+},
+
+// ——————————————— 18: II. MEŞRUTİYET & TRABLUSGARP ———————————————
+{
+  year: 1908, label: "1908", era: "II. Meşrutiyet & Trablusgarp Savaşı",
+  description: "İttihat ve Terakki'nin II. Meşrutiyet'i ilan ettirmesi, 31 Mart Olayı ve İtalya'nın Trablusgarp'ı işgali.",
+  states: [
+    { name:"Osmanlı İmparatorluğu", type:"turk-islam", lat:39, lon:32, capital:"İstanbul",
+      details:{
+        period:"1908 – 1912", capital:"İstanbul",
+        leaders:["II. Abdülhamid (tahttan indirildi 1909)","V. Mehmed Reşad (1909-1918)","İttihat ve Terakki Cemiyeti","Enver Paşa","Talat Paşa","Cemal Paşa"],
+        achievements:["II. MEŞRUTİYET'İN İLANI (23 Temmuz 1908)","Kanun-i Esasi'nin yeniden yürürlüğe girmesi","Meclis-i Mebusan'ın yeniden açılması","Basın özgürlüğü","Siyasi parti faaliyetleri","Kadın hakları hareketi başlangıcı"],
+        culture:["Milli Edebiyat akımı başlangıcı","Türkçülük akımının yükselişi","Fecr-i Ati edebiyatı","Genç Kalemler dergisi","Yeni Lisan hareketi"],
+        scientists:["Ziya Gökalp (Türkçülüğün Esasları)","Ömer Seyfettin (hikaye)","Mehmed Akif Ersoy (şair)","Halide Edib Adıvar (romancı)"],
+        events:["II. MEŞRUTİYET'İN İLANI (23 Temmuz 1908)","Bulgaristan'ın bağımsızlığını ilanı (1908)","Avusturya-Macaristan'ın Bosna-Hersek'i ilhakı (1908)","Girit'in Yunanistan'a birleşme ilanı (1908)","31 MART OLAYI (13 Nisan 1909)","Hareket Ordusu ve olayın bastırılması","II. Abdülhamid'in tahttan indirilmesi (27 Nisan 1909)","TRABLUSGARP SAVAŞI (1911-1912)","Uşi Antlaşması – Son Afrika toprağının kaybı (1912)"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"İtalya", type:"enemy", lat:42, lon:12,
+      details:{period:"Krallık",capital:"Roma",leaders:["III. Vittorio Emanuele"],achievements:["Sanayi gelişimi"],culture:[],scientists:[],events:["Trablusgarp'ın işgali (1911)","Uşi Antlaşması (1912)"]}
+    },
+    { name:"Avusturya-Macaristan", type:"enemy", lat:48, lon:16,
+      details:{period:"1867-1918",capital:"Viyana",leaders:["Franz Josef"],achievements:[],culture:[],scientists:[],events:["Bosna-Hersek ilhakı (1908)"]}
+    },
+    { name:"Bulgaristan", type:"enemy", lat:42.7, lon:25,
+      details:{period:"1908 bağımsız",capital:"Sofya",leaders:["Ferdinand"],achievements:[],culture:[],scientists:[],events:["Bağımsızlık ilanı (1908)"]}
+    }
+  ],
+  wars: [
+    {from:"Osmanlı İmparatorluğu",to:"İtalya",name:"Trablusgarp Savaşı",year:"1911-1912",result:"Osmanlı yenilgisi – Libya kaybedildi (Uşi Antlaşması)"}
+  ]
+},
+
+// ——————————————— 19: BALKAN SAVAŞLARI ———————————————
+{
+  year: 1912, label: "1912", era: "Balkan Savaşları",
+  description: "Osmanlı'nın Balkanlardaki son topraklarını kaybettiği felaket dönemi. Edirne'nin kaybı ve geri alınması.",
+  states: [
+    { name:"Osmanlı İmparatorluğu", type:"turk-islam", lat:41, lon:29, capital:"İstanbul",
+      details:{
+        period:"1912 – 1913", capital:"İstanbul",
+        leaders:["Kamil Paşa Hükümeti","Mahmud Şevket Paşa","Bab-ı Ali Baskını (İttihat ve Terakki)"],
+        achievements:["Edirne'nin geri alınması (II. Balkan Savaşı)","Bab-ı Ali Baskını ile İttihat ve Terakki iktidarı"],
+        culture:["Balkan göçmenleri trajedisi","Milliyetçilik akımının güçlenmesi"],
+        scientists:[],
+        events:["I. BALKAN SAVAŞI (Ekim 1912)","Balkan İttifakı (Bulgaristan, Sırbistan, Yunanistan, Karadağ)","Kumanovo Savaşı – Sırplara yenilgi","Kırkkilise (Kırklareli) yenilgisi","Lüleburgaz yenilgisi","Çatalca Savaşları – İstanbul önlerinde durdurma","EDİRNE'NİN DÜŞMESİ","Londra Antlaşması (1913)","BAB-I ALİ BASKINI (23 Ocak 1913)","II. BALKAN SAVAŞI (Haziran-Temmuz 1913)","EDİRNE'NİN GERİ ALINMASI","Bükreş Antlaşması (1913)","İstanbul (Konstantinopolis) Antlaşması – Bulgaristan ile (1913)","Atina Antlaşması – Yunanistan ile (1913)","Rumeli'nin büyük bölümünün kaybı","350.000+ Müslüman göçmen"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"Bulgaristan", type:"enemy", lat:42.7, lon:25,
+      details:{period:"Krallık",capital:"Sofya",leaders:["Ferdinand"],achievements:[],culture:[],scientists:[],events:["Edirne'yi kuşatma","II. Balkan Savaşı'nda müttefiklerine yenilme"]}
+    },
+    { name:"Sırbistan", type:"enemy", lat:44.8, lon:21,
+      details:{period:"Krallık",capital:"Belgrad",leaders:["I. Petar"],achievements:[],culture:[],scientists:[],events:["Kumanovo zaferi","Makedonya'nın kontrolü"]}
+    },
+    { name:"Yunanistan", type:"enemy", lat:38, lon:24,
+      details:{period:"Krallık",capital:"Atina",leaders:[],achievements:[],culture:[],scientists:[],events:["Selanik'in işgali","Ege adalarının alınması"]}
+    },
+    { name:"Karadağ", type:"enemy", lat:42.5, lon:19.3,
+      details:{period:"Krallık",capital:"Cetinje",leaders:[],achievements:[],culture:[],scientists:[],events:["Balkan İttifakı'na katılım"]}
+    }
+  ],
+  wars: [
+    {from:"Osmanlı İmparatorluğu",to:"Bulgaristan",name:"I. Balkan Savaşı",year:"Ekim 1912 - Mayıs 1913",result:"Osmanlı yenilgisi – Rumeli kaybedildi"},
+    {from:"Osmanlı İmparatorluğu",to:"Yunanistan",name:"Ege Cephesi",year:"1912-1913",result:"Selanik ve Ege adaları kaybedildi"},
+    {from:"Osmanlı İmparatorluğu",to:"Bulgaristan",name:"II. Balkan Savaşı – Edirne'nin Geri Alınması",year:"Haziran-Temmuz 1913",result:"Edirne ve Doğu Trakya geri alındı"}
+  ]
+},
+
+// ——————————————— 20: I. DÜNYA SAVAŞI ———————————————
+{
+  year: 1914, label: "1914", era: "I. Dünya Savaşı",
+  description: "Osmanlı İmparatorluğu'nun İttifak Devletleri safında I. Dünya Savaşı'na girişi, Çanakkale Zaferi ve Mondros'a giden süreç.",
+  states: [
+    { name:"Osmanlı İmparatorluğu", type:"turk-islam", lat:39, lon:33, capital:"İstanbul",
+      details:{
+        period:"1914 – 1918", capital:"İstanbul",
+        leaders:["V. Mehmed Reşad","Enver Paşa (Harbiye Nazırı)","Talat Paşa (Dahiliye Nazırı/Sadrazam)","Cemal Paşa (Bahriye Nazırı)","Mustafa Kemal (Çanakkale kahramanı)"],
+        achievements:["ÇANAKKALE ZAFERİ (1915) – 'Çanakkale Geçilmez!'","Kut'ül Amare Zaferi (1916) – İngiliz ordusunun teslim alınması","Mustafa Kemal'in ortaya çıkışı","Milli mücadele ruhunun temeli"],
+        culture:["Milli Edebiyat akımı","Savaş edebiyatı","Mehmed Akif'in şiirleri"],
+        scientists:["Mehmed Akif Ersoy (İstiklal Marşı şairi)"],
+        events:["Osmanlı'nın savaşa girişi – Karadeniz Olayı (Ekim 1914)","KAFKAS CEPHESİ – Sarıkamış Harekâtı felaketi (Aralık 1914-Ocak 1915)","ÇANAKKALE CEPHESİ – Deniz savaşları (18 Mart 1915)","ÇANAKKALE CEPHESİ – Kara savaşları (Nisan-Aralık 1915)","Anafartalar Kahramanı Mustafa Kemal","KANAL CEPHESİ – Süveyş Kanal Seferleri (1915-1916)","IRAK CEPHESİ – Kut'ül Amare Zaferi (Nisan 1916)","FİLİSTİN-SURİYE CEPHESİ","HİCAZ-YEMEN CEPHESİ","GALİÇYA-ROMANYA-MAKEDONYA CEPHELERİ","Mondros Ateşkes Antlaşması (30 Ekim 1918)","Kapitülasyonların kaldırılması (savaş sırasında)","Sevr Antlaşması dayatması (1920)"]
+      }
+    },
+    { name:"Almanya", type:"enemy", lat:51, lon:10,
+      details:{period:"İmparatorluk",capital:"Berlin",leaders:["II. Wilhelm"],achievements:["Endüstriyel güç"],culture:[],scientists:[],events:["Osmanlı müttefiki","Yenilgi (1918)"]}
+    }
+  ],
+  enemies: [
+    { name:"İngiltere (İtilaf)", type:"enemy", lat:51.5, lon:-0.1,
+      details:{period:"İmparatorluk",capital:"Londra",leaders:["V. George","Churchill"],achievements:["Dünyanın en güçlü donanması"],culture:[],scientists:[],events:["Çanakkale'de yenilgi","Kut'ül Amare'de yenilgi","Irak ve Filistin cephelerinde zafer"]}
+    },
+    { name:"Fransa (İtilaf)", type:"enemy", lat:49, lon:2,
+      details:{period:"3. Cumhuriyet",capital:"Paris",leaders:[],achievements:[],culture:[],scientists:[],events:["Çanakkale'de yenilgi","Sykes-Picot Antlaşması"]}
+    },
+    { name:"Rusya (İtilaf)", type:"enemy", lat:56, lon:37,
+      details:{period:"İmparatorluk → Devrim",capital:"Petrograd",leaders:["II. Nikolay"],achievements:[],culture:[],scientists:[],events:["Kafkas Cephesi","Bolşevik Devrimi ile savaştan çekilme (1917)"]}
+    }
+  ],
+  wars: [
+    {from:"Osmanlı İmparatorluğu",to:"İngiltere (İtilaf)",name:"ÇANAKKALE SAVAŞI",year:"1915",result:"OSMANLI ZAFERİ – 'Çanakkale Geçilmez!'"},
+    {from:"Osmanlı İmparatorluğu",to:"Rusya (İtilaf)",name:"Sarıkamış Harekâtı",year:"Aralık 1914-Ocak 1915",result:"Felaket – büyük kayıplar"},
+    {from:"Osmanlı İmparatorluğu",to:"İngiltere (İtilaf)",name:"Kut'ül Amare Kuşatması",year:"1916",result:"Osmanlı zaferi – İngiliz ordusu teslim oldu"},
+    {from:"Osmanlı İmparatorluğu",to:"İngiltere (İtilaf)",name:"Kanal-Filistin-Irak Cepheleri",year:"1915-1918",result:"Sonunda İtilaf zaferi"}
+  ]
+},
+
+// ——————————————— 21: MONDROS & İŞGALLER ———————————————
+{
+  year: 1919, label: "1919", era: "Mondros Sonrası & İşgaller",
+  description: "Mondros Ateşkesi, İstanbul'un ve Anadolu'nun işgali, Mustafa Kemal'in Samsun'a çıkışı ve Milli Mücadele'nin başlangıcı.",
+  states: [
+    { name:"Milli Mücadele Hareketi", type:"turk", lat:40, lon:36, capital:"Sivas → Ankara",
+      details:{
+        period:"1918 – 1920", capital:"Sivas, sonra Ankara",
+        leaders:["Mustafa Kemal Paşa","Kazım Karabekir Paşa","Rauf Orbay","Ali Fuat Cebesoy","Refet Bele"],
+        achievements:["19 Mayıs 1919 – Samsun'a çıkış","Amasya Genelgesi (22 Haziran 1919)","Erzurum Kongresi (23 Temmuz 1919)","Sivas Kongresi (4 Eylül 1919)","Amasya Görüşmeleri (Ekim 1919)","Son Osmanlı Mebusan Meclisi – Misak-ı Milli (28 Ocak 1920)","TBMM'NİN AÇILMASI (23 Nisan 1920)"],
+        culture:["Kuva-yi Milliye ruhu","Milli mücadele edebiyatı","Halkın örgütlenmesi","Müdafaa-i Hukuk Cemiyetleri"],
+        scientists:["Mustafa Kemal Atatürk (askeri stratejist, devlet adamı)","Halide Edib Adıvar (edebiyat, milli mücadele)"],
+        events:["MONDROS ATEŞKESİ (30 Ekim 1918)","İstanbul'un resmen işgali (13 Kasım 1918)","İzmir'in Yunanlılar tarafından işgali (15 Mayıs 1919)","19 MAYIS 1919 – Mustafa Kemal'in Samsun'a çıkışı","Havza Genelgesi (28 Mayıs 1919)","AMASYA GENELGESİ (22 Haziran 1919) – 'Milletin istiklalini yine milletin azim ve kararı kurtaracaktır'","ERZURUM KONGRESİ (23 Temmuz 1919) – Milli sınırlar","SİVAS KONGRESİ (4 Eylül 1919) – Tek çatı altında birleşme","Amasya Protokolü (Ekim 1919)","MİSAK-I MİLLİ (28 Ocak 1920)","İstanbul'un resmen işgali (16 Mart 1920)","TBMM'NİN AÇILMASI (23 Nisan 1920)","SEVR ANTLAŞMASI dayatması (10 Ağustos 1920)"]
+      }
+    }
+  ],
+  enemies: [
+    { name:"İngiltere (İşgalci)", type:"enemy", lat:51.5, lon:-0.1,
+      details:{period:"İşgal",capital:"Londra",leaders:["Lloyd George"],achievements:[],culture:[],scientists:[],events:["İstanbul işgali","Yunanistan'a destek","Sevr Antlaşması"]}
+    },
+    { name:"Yunanistan (İşgalci)", type:"enemy", lat:38, lon:24,
+      details:{period:"Megali İdea",capital:"Atina",leaders:["Venizelos"],achievements:[],culture:[],scientists:[],events:["İzmir'in işgali (15 Mayıs 1919)","Batı Anadolu'da ilerleme"]}
+    },
+    { name:"Fransa (İşgalci)", type:"enemy", lat:37, lon:37,
+      details:{period:"İşgal",capital:"Paris",leaders:[],achievements:[],culture:[],scientists:[],events:["Adana, Antep, Urfa, Maraş işgali","Güney cephesi"]}
+    },
+    { name:"İtalya (İşgalci)", type:"enemy", lat:37, lon:30,
+      details:{period:"İşgal",capital:"Roma",leaders:[],achievements:[],culture:[],scientists:[],events:["Antalya ve Konya bölgesi işgali"]}
+    }
+  ],
+  wars: [
+    {from:"Milli Mücadele Hareketi",to:"Fransa (İşgalci)",name:"Güney Cephesi – Maraş, Urfa, Antep Savunmaları",year:"1919-1920",result:"Milli kuvvetler zaferi"},
+    {from:"Milli Mücadele Hareketi",to:"Yunanistan (İşgalci)",name:"Yunan İşgaline Karşı Direniş",year:"1919-1920",result:"Kuva-yi Milliye direniyor"}
+  ]
+},
+
+// ——————————————— 22: KURTULUŞ SAVAŞI ———————————————
+{
+  year: 1921, label: "1921", era: "Kurtuluş Savaşı & Zaferler",
+  description: "TBMM ordusunun İnönü, Sakarya ve Büyük Taarruz zaferleriyle tam bağımsızlığı kazanması ve Cumhuriyet'in ilanı.",
+  states: [
+    { name:"TBMM Hükümeti", type:"turk", lat:40, lon:33, capital:"Ankara",
+      details:{
+        period:"1920 – 1923", capital:"Ankara",
+        leaders:["Mustafa Kemal Atatürk (TBMM Başkanı, Başkomutan)","İsmet İnönü (Batı Cephesi Komutanı)","Fevzi Çakmak (Genelkurmay Başkanı)"],
+        achievements:["Düzenli ordunun kurulması","Teşkilat-ı Esasiye (1921 Anayasası)","İstiklal Marşı'nın kabulü (12 Mart 1921)","Saltanatın kaldırılması (1 Kasım 1922)","Lozan Barış Antlaşması (24 Temmuz 1923)","Cumhuriyet'in İlanı (29 Ekim 1923)"],
+        culture:["Milli Mücadele destanları","Anadolu Ajansı'nın kuruluşu (1920)","Hakimiyet-i Milliye gazetesi","Kuva-yi Milliye ruhunun orduya dönüşümü"],
+        scientists:["Yunus Nadi","Mehmet Akif Ersoy","Halide Edib Adıvar","Ruşen Eşref Ünaydın"],
+        events:["I. İNÖNÜ ZAFERİ (Ocak 1921)","Londra Konferansı","II. İNÖNÜ ZAFERİ (Nisan 1921)","Kütahya-Eskişehir Muharebeleri (Temmuz 1921 - Geri Çekilme)","Başkomutanlık Kanunu (Ağustos 1921)","Tekalif-i Milliye Emirleri","SAKARYA MEYDAN MUHAREBESİ (Ağustos-Eylül 1921) - 'Hattı müdafaa yoktur, sathı müdafaa vardır'","Ankara Antlaşması - Fransa ile (Ekim 1921)","BÜYÜK TAARRUZ VE BAŞKOMUTANLIK MEYDAN MUHAREBESİ (26-30 Ağustos 1922) - 'Ordular ilk hedefiniz Akdeniz'dir, İleri!'","İzmir'in Kurtuluşu (9 Eylül 1922)","Mudanya Ateşkes Antlaşması (11 Ekim 1922)","Lozan Barış Antlaşması (24 Temmuz 1923)"]
+      }
+    }
+  ],
+  enemies:[
+    { name:"Yunanistan (İşgalci)", type:"enemy", lat:38, lon:24,
+      details:{period:"Megali İdea",capital:"Atina",leaders:["Kral Konstantin","Trikupis"],achievements:[],culture:[],scientists:[],events:["Polatlı'ya kadar ilerleme","Sakarya'da durdurulma","Büyük Taarruz'da denize dökülme"]}
+    },
+    { name:"İngiltere (İtilaf)", type:"enemy", lat:51.5, lon:-0.1,
+      details:{period:"İşgal",capital:"Londra",leaders:["Lloyd George"],achievements:[],culture:[],scientists:[],events:["İstanbul'un resmen işgali","Çanakkale Krizi","Mudanya Ateşkesi"]}
+    },
+    { name:"Ermenistan", type:"enemy", lat:40, lon:44,
+      details:{period:"Doğu Cephesi",capital:"Erivan",leaders:[],achievements:[],culture:[],scientists:[],events:["Kazım Karabekir'e yenilgi (1920)","Gümrü Antlaşması"]}
+    }
+  ],
+  wars:[
+    {from:"TBMM Hükümeti",to:"Ermenistan",name:"Doğu Cephesi Savaşları",year:"1920",result:"TBMM Zaferi - Gümrü Antlaşması"},
+    {from:"TBMM Hükümeti",to:"Yunanistan (İşgalci)",name:"I. ve II. İnönü Savaşları",year:"1921",result:"TBMM Zaferi - Düzenli ordunun ilk başarıları"},
+    {from:"TBMM Hükümeti",to:"Yunanistan (İşgalci)",name:"SAKARYA MEYDAN MUHAREBESİ",year:"1921",result:"TBMM Zaferi - Yunan taarruz gücü kırıldı"},
+    {from:"TBMM Hükümeti",to:"Yunanistan (İşgalci)",name:"BÜYÜK TAARRUZ",year:"1922",result:"TBMM Kesin Zaferi - Anadolu kurtarıldı"}
+  ]
+}
+]; // BURASI VERİ DİZİSİNİN BİTİŞİ
+
+// ============================================================
+// UYGULAMA MANTIĞI VE HARİTA KONTROLLERİ
+// ============================================================
+let currentIndex = 0;
+let playing = false;
+let playTimer = null;
+let speedSeconds = parseInt(document.getElementById('speed-slider').value);
+
+const overlay = document.getElementById('map-overlay');
+const infoEra = document.getElementById('info-era');
+const infoDesc = document.getElementById('info-desc');
+const infoWars = document.getElementById('info-wars');
+const timelineBar = document.getElementById('timeline-bar');
+const timelineProgress = document.getElementById('timeline-progress');
+const periodCounter = document.getElementById('period-counter');
+const eraBadge = document.getElementById('era-badge');
+const playBtn = document.getElementById('play-btn');
+const speedSlider = document.getElementById('speed-slider');
+const speedLabel = document.getElementById('speed-label');
+const detailPanel = document.getElementById('detail-panel');
+const detailTitle = document.getElementById('detail-title');
+const detailContent = document.getElementById('detail-content');
+const infoBox = document.getElementById('info-box');
+
+function init() {
+  // Zaman Çizelgesi (Timeline) Çizgisini Oluştur
+  const track = document.createElement('div');
+  track.id = 'timeline-track';
+  timelineBar.appendChild(track);
+  timelineBar.appendChild(timelineProgress);
+
+  // Dönem noktalarını (Timeline Dots) oluştur
+  PERIODS.forEach((p, idx) => {
+    const dot = document.createElement('div');
+    dot.className = 'timeline-dot future';
+    dot.style.left = `${(idx / (PERIODS.length - 1)) * 100}%`;
+    dot.onclick = () => goToPeriod(idx);
     
-    <!-- Haritanın görüneceği alan -->
-    <div id="map"></div>
+    const innerDot = document.createElement('div');
+    innerDot.className = 'dot';
+    
+    const label = document.createElement('div');
+    label.className = 'year-label';
+    label.innerText = p.label;
+    
+    dot.appendChild(innerDot);
+    dot.appendChild(label);
+    timelineBar.appendChild(dot);
+  });
 
-    <!-- Tıklanan devletin bilgisini gösterecek yan panel -->
-    <div id="info-panel" class="hidden">
-        <h2 id="devlet-adi">Devlet Adı</h2>
-        <p><strong>Kurucu:</strong> <span id="kurucu"></span></p>
-        <p><strong>Dönem:</strong> <span id="donem"></span></p>
-        <hr>
-        <h4>Kültür ve Medeniyet</h4>
-        <ul id="kultur-listesi"></ul>
-        <button id="kapat-btn">Kapat</button>
-    </div>
+  // Hız ayarı dinleyicisi
+  speedSlider.addEventListener('input', (e) => {
+    speedSeconds = parseInt(e.target.value);
+    speedLabel.innerText = speedSeconds + 's';
+    if(playing) {
+      pause(); play();
+    }
+  });
 
-    <!-- Alt kısımdaki zaman çizelgesi -->
-    <div id="timeline-container">
-        <div class="timeline-header">
-            <span id="current-year-display">M.Ö. 220</span>
+  // Başlangıç dönemini yükle
+  goToPeriod(0);
+}
+
+function goToPeriod(index) {
+  if(index < 0 || index >= PERIODS.length) return;
+  currentIndex = index;
+  const period = PERIODS[currentIndex];
+
+  // Arayüz metinlerini güncelle
+  infoEra.innerText = period.year + " - " + period.era;
+  infoDesc.innerText = period.description;
+  eraBadge.innerText = period.era;
+  periodCounter.innerText = `${currentIndex + 1} / ${PERIODS.length}`;
+
+  // Zaman Çizelgesi CSS sınıflarını güncelle
+  const dots = document.querySelectorAll('.timeline-dot');
+  dots.forEach((dot, idx) => {
+    dot.className = 'timeline-dot';
+    if (idx < currentIndex) dot.classList.add('passed');
+    else if (idx === currentIndex) dot.classList.add('active');
+    else dot.classList.add('future');
+  });
+  timelineProgress.style.width = `${(currentIndex / (PERIODS.length - 1)) * 100}%`;
+
+  drawMap(period);
+  closePanel();
+}
+
+function drawMap(period) {
+  overlay.innerHTML = '';
+  infoWars.innerHTML = '';
+
+  // Savaş Çizgileri için SVG Altlığı
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.style.position = 'absolute';
+  svg.style.top = '0';
+  svg.style.left = '0';
+  svg.style.width = '100%';
+  svg.style.height = '100%';
+  svg.style.pointerEvents = 'none';
+  svg.style.zIndex = '2';
+  overlay.appendChild(svg);
+
+  // Devletleri Çiz
+  if(period.states) {
+    period.states.forEach(state => createMarker(state));
+  }
+
+  // Düşmanları Çiz
+  if(period.enemies) {
+    period.enemies.forEach(enemy => createMarker(enemy));
+  }
+
+  // Savaşları Çiz (Oklar ve Etiketler)
+  if(period.wars) {
+    period.wars.forEach(war => {
+      // Bilgi Kutusundaki (Alttaki) savaş etiketleri
+      const tag = document.createElement('div');
+      tag.className = 'info-war-tag';
+      tag.innerText = `⚔ ${war.name} (${war.year})`;
+      tag.onclick = () => openWarDetail(war);
+      infoWars.appendChild(tag);
+
+      // Harita üzerindeki oklar ve çarpışma animasyonları
+      const fromState = period.states ? period.states.find(s => s.name === war.from) : null;
+      let toState = period.enemies ? period.enemies.find(s => s.name === war.to) : null;
+      
+      // Eğer hedef düşmanlar arasında değil de başka bir devlette ise
+      if (!toState && period.states) {
+        toState = period.states.find(s => s.name === war.to);
+      }
+      
+      if(fromState && toState) {
+        const p1 = geoToPercent(fromState.lat, fromState.lon);
+        const p2 = geoToPercent(toState.lat, toState.lon);
+        
+        // Savaş rozeti ortada çıksın
+        const midX = (p1.x + p2.x) / 2;
+        const midY = (p1.y + p2.y) / 2;
+
+        const badge = document.createElement('div');
+        badge.className = 'war-badge';
+        badge.style.left = `${midX}%`;
+        badge.style.top = `${midY}%`;
+        badge.innerText = `⚔ ${war.name}`;
+        badge.onclick = () => openWarDetail(war);
+        overlay.appendChild(badge);
+
+        // Çarpışan iki devlet arasına kesik çizgi çiz
+        const lineNode = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        lineNode.setAttribute('x1', `${p1.x}%`);
+        lineNode.setAttribute('y1', `${p1.y}%`);
+        lineNode.setAttribute('x2', `${p2.x}%`);
+        lineNode.setAttribute('y2', `${p2.y}%`);
+        lineNode.setAttribute('stroke', 'rgba(217, 64, 64, 0.4)');
+        lineNode.setAttribute('stroke-width', '2');
+        lineNode.setAttribute('stroke-dasharray', '5 5');
+        svg.appendChild(lineNode);
+      }
+    });
+  }
+}
+
+function createMarker(item) {
+  const pos = geoToPercent(item.lat, item.lon);
+  
+  const wrapper = document.createElement('div');
+  wrapper.className = 'state-marker';
+  wrapper.style.left = `${pos.x}%`;
+  wrapper.style.top = `${pos.y}%`;
+  wrapper.onclick = () => openDetail(item);
+
+  const ring = document.createElement('div');
+  ring.className = `marker-ring ${item.type}`;
+  
+  const dot = document.createElement('div');
+  dot.className = `marker-dot ${item.type}`;
+  
+  const label = document.createElement('div');
+  label.className = `marker-label ${item.type}`;
+  label.innerText = item.name;
+
+  wrapper.appendChild(ring);
+  wrapper.appendChild(dot);
+  wrapper.appendChild(label);
+  overlay.appendChild(wrapper);
+}
+
+function openDetail(item) {
+  detailTitle.innerText = item.name;
+  
+  let html = '';
+  if(item.details) {
+    const d = item.details;
+    
+    if(d.period || d.capital) {
+      html += `<div class="detail-period">
+        ${d.period ? `<div class="label">DÖNEM</div><div class="value">${d.period}</div><br>` : ''}
+        ${d.capital ? `<div class="label">BAŞKENT / MERKEZ</div><div class="value">${d.capital}</div>` : ''}
+      </div>`;
+    }
+
+    if(d.leaders && d.leaders.length > 0) {
+      html += `<div class="detail-section">
+        <div class="detail-section-title">👑 Önemli Liderler</div>
+        <div class="tag-list">
+          ${d.leaders.map(l => `<span class="tag leader">${l}</span>`).join('')}
         </div>
-        <input type="range" id="year-slider" min="-220" max="1923" value="-220" step="1">
-    </div>
+      </div>`;
+    }
 
-    <!-- Leaflet ve kendi JS dosyalarımız -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="veri.js"></script>
-    <script src="app.js"></script>
+    if(d.achievements && d.achievements.length > 0) {
+      html += `<div class="detail-section">
+        <div class="detail-section-title">🏆 Başarılar & Özellikler</div>
+        ${d.achievements.map(a => `<div class="achievement-item">${a}</div>`).join('')}
+      </div>`;
+    }
+
+    if(d.culture && d.culture.length > 0) {
+      html += `<div class="detail-section">
+        <div class="detail-section-title">🏛 Kültür & Medeniyet</div>
+        <div class="tag-list">
+          ${d.culture.map(c => `<span class="tag culture">${c}</span>`).join('')}
+        </div>
+      </div>`;
+    }
+
+    if(d.scientists && d.scientists.length > 0) {
+      html += `<div class="detail-section">
+        <div class="detail-section-title">📜 Bilim İnsanları / Düşünürler</div>
+        <div class="tag-list">
+          ${d.scientists.map(s => `<span class="tag scientist">${s}</span>`).join('')}
+        </div>
+      </div>`;
+    }
+
+    if(d.events && d.events.length > 0) {
+      html += `<div class="detail-section">
+        <div class="detail-section-title">📅 Kronolojik Olaylar</div>
+        <div class="event-timeline">
+          ${d.events.map(e => `<div class="event-item">${e}</div>`).join('')}
+        </div>
+      </div>`;
+    }
+  } else {
+    html = '<p style="color:var(--text-dim)">Detaylı bilgi bulunmuyor.</p>';
+  }
+
+  detailContent.innerHTML = html;
+  detailPanel.classList.add('open');
+  infoBox.classList.add('shifted');
+}
+
+function openWarDetail(war) {
+  detailTitle.innerText = "Savaş Detayı";
+  detailContent.innerHTML = `
+    <div class="war-detail-box">
+      <div class="title">${war.name}</div>
+      <div class="meta"><strong>Tarih:</strong> ${war.year}</div>
+      <div class="meta" style="color:#6ee7b7"><strong>Sonuç:</strong> ${war.result}</div>
+      <div class="sides"><strong>Taraflar:</strong> ${war.from} ⚔ ${war.to}</div>
+    </div>
+  `;
+  detailPanel.classList.add('open');
+  infoBox.classList.add('shifted');
+}
+
+function closePanel() {
+  detailPanel.classList.remove('open');
+  infoBox.classList.remove('shifted');
+}
+
+function nextPeriod() {
+  if(currentIndex < PERIODS.length - 1) goToPeriod(currentIndex + 1);
+  else { pause(); goToPeriod(0); }
+}
+
+function prevPeriod() {
+  if(currentIndex > 0) goToPeriod(currentIndex - 1);
+}
+
+function togglePlay() {
+  if(playing) pause();
+  else play();
+}
+
+function play() {
+  playing = true;
+  playBtn.innerHTML = '⏸ Durdur';
+  playBtn.classList.remove('play');
+  playBtn.classList.add('pause');
+  
+  if(currentIndex >= PERIODS.length - 1) goToPeriod(0);
+  
+  playTimer = setInterval(() => {
+    if(currentIndex < PERIODS.length - 1) goToPeriod(currentIndex + 1);
+    else pause();
+  }, speedSeconds * 1000);
+}
+
+function pause() {
+  playing = false;
+  playBtn.innerHTML = '▶ Oynat';
+  playBtn.classList.remove('pause');
+  playBtn.classList.add('play');
+  clearInterval(playTimer);
+}
+
+// Sayfa yüklendiğinde sistemi başlat
+window.onload = init;
+</script>
 </body>
 </html>
