@@ -1,5 +1,5 @@
 const kpssVerileri =[
-    {
+        {
         id: "asyahun",
         isim: "Asya Hun Devleti",
         baslangic: -220, // M.Ö. 220
