@@ -809,13 +809,15 @@ function render() {
   periodCounter.textContent = `${currentIdx+1} / ${PERIODS.length}`;
   
   infoWars.innerHTML = '';
-  p.wars.forEach(w => {
-    const tag = document.createElement('div');
-    tag.className = 'info-war-tag';
-    tag.textContent = `⚔ ${w.name} (${w.year})`;
-    tag.onclick = () => showWarDetail(w);
-    infoWars.appendChild(tag);
-  });
+  if (p.wars) {
+    p.wars.forEach(w => {
+      const tag = document.createElement('div');
+      tag.className = 'info-war-tag';
+      tag.textContent = `⚔ ${w.name} (${w.year})`;
+      tag.onclick = () => showWarDetail(w);
+      infoWars.appendChild(tag);
+    });
+  }
   
   renderTimeline();
   overlay.innerHTML = '';
@@ -860,7 +862,8 @@ function render() {
     });
   }
 
-  const allStates = [...(p.states||[]), ...(p.enemies||
+  // SAVAŞ ÇİZGİLERİ VE ROZETLERİ
+  const allStates =[...(p.states||[]), ...(p.enemies||
   
   if(p.wars) {
     p.wars.forEach(w => {
