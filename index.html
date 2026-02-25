@@ -809,51 +809,46 @@ function render() {
   periodCounter.textContent = `${currentIdx+1} / ${PERIODS.length}`;
   
   infoWars.innerHTML = '';
-  if (p.wars) {
-    p.wars.forEach(w => {
-      const tag = document.createElement('div');
-      tag.className = 'info-war-tag';
-      tag.textContent = `⚔ ${w.name} (${w.year})`;
-      tag.onclick = () => showWarDetail(w);
-      infoWars.appendChild(tag);
-    });
-  }
+  p.wars.forEach(w => {
+    const tag = document.createElement('div');
+    tag.className = 'info-war-tag';
+    tag.textContent = `⚔ ${w.name} (${w.year})`;
+    tag.onclick = () => showWarDetail(w);
+    infoWars.appendChild(tag);
+  });
   
   renderTimeline();
   overlay.innerHTML = '';
   
-  // TÜM HARİTAYI SIFIRLA (Karanlık yap)
+  // === YENİ ÖZELLİK: SVG ÜLKELERİNİ RENKLENDİRME ===
+  // Önce tüm haritayı standart rengine döndür
   document.querySelectorAll('#map-svg-wrap svg path').forEach(path => {
-    path.style.fill = '#2a3441'; 
+    path.style.fill = '#2a3441'; // Koyu okyanus/gece temasına uygun kara rengi
   });
 
-  // TÜRK DEVLETLERİNİN TOPRAKLARINI BOYA
+  // Türk devletlerinin topraklarını boya
   if(p.states) {
     p.states.forEach(state => {
       if(state.territories) {
         state.territories.forEach(countryName => {
-          // HEM NAME HEM DE CLASS özelliğinde ara (Turkey gibi istisnalar için)
-          let paths = document.querySelectorAll(`#map-svg-wrap svg path[name="${countryName}"], #map-svg-wrap svg path[class="${countryName}"]`);
-          paths.forEach(path => {
-            path.style.fill = 'rgba(201, 168, 76, 0.7)'; // Altın sarısı
-          });
+          let path = document.querySelector(`#map-svg-wrap svg path[name="${countryName}"]`);
+          if(path) path.style.fill = 'rgba(201, 168, 76, 0.7)'; // Altın sarısı (Transparan)
         });
       }
+      // Merkez noktası (Başkent / Marker)
       if(state.lat && state.lon) {
          overlay.appendChild(createMarker(state, geoToPercent(state.lat, state.lon), state.type));
       }
     });
   }
 
-  // DÜŞMAN DEVLETLERİN TOPRAKLARINI BOYA
+  // Düşman devletlerin topraklarını boya
   if(p.enemies) {
     p.enemies.forEach(enemy => {
       if(enemy.territories) {
         enemy.territories.forEach(countryName => {
-          let paths = document.querySelectorAll(`#map-svg-wrap svg path[name="${countryName}"], #map-svg-wrap svg path[class="${countryName}"]`);
-          paths.forEach(path => {
-            path.style.fill = 'rgba(122, 139, 160, 0.6)'; // Düşman Grisi
-          });
+          let path = document.querySelector(`#map-svg-wrap svg path[name="${countryName}"]`);
+          if(path) path.style.fill = 'rgba(122, 139, 160, 0.6)'; // Gri/Mavi Düşman Rengi
         });
       }
       if(enemy.lat && enemy.lon) {
@@ -861,9 +856,9 @@ function render() {
       }
     });
   }
+  // ================================================
 
-  // SAVAŞ ÇİZGİLERİ VE ROZETLERİ
-  const allStates =[...(p.states||[]), ...(p.enemies||
+  const allStates = [...(p.states||[]), ...(p.enemies||[])];
   
   if(p.wars) {
     p.wars.forEach(w => {
