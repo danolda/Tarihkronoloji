@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KPSS Tarih - İnteraktif Harita</title>
+    <!-- Leaflet Harita Kütüphanesi CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Haritanın görüneceği alan -->
+    <div id="map"></div>
+
+    <!-- Tıklanan devletin bilgisini gösterecek yan panel -->
+    <div id="info-panel" class="hidden">
+        <h2 id="devlet-adi">Devlet Adı</h2>
+        <p><strong>Kurucu:</strong> <span id="kurucu"></span></p>
+        <p><strong>Dönem:</strong> <span id="donem"></span></p>
+        <hr>
+        <h4>Kültür ve Medeniyet</h4>
+        <ul id="kultur-listesi"></ul>
+        <button id="kapat-btn">Kapat</button>
+    </div>
+
+    <!-- Alt kısımdaki zaman çizelgesi -->
+    <div id="timeline-container">
+        <div class="timeline-header">
+            <span id="current-year-display">M.Ö. 220</span>
+        </div>
+        <input type="range" id="year-slider" min="-220" max="1923" value="-220" step="1">
+    </div>
+
+    <!-- Leaflet ve kendi JS dosyalarımız -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="veri.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
