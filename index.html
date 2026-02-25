@@ -29,11 +29,46 @@ html,body{height:100%;overflow:hidden;background:var(--bg-dark);color:var(--text
 
 #main{flex:1;display:flex;overflow:hidden;position:relative}
 
-#map-container{flex:1;position:relative;overflow:hidden;background:var(--bg-dark)}
-#map-svg-wrap{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
-#map-svg-wrap svg{width:100%;height:100%;opacity:0.18;filter:hue-rotate(30deg) saturate(0.4) brightness(0.7)}
-#map-overlay{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
-#map-overlay *{pointer-events:auto}
+#map-container {
+  flex: 1;
+  background: var(--bg-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Haritanın orijinal 2000x857 oranını koruyan sihirli kutu */
+#map-scaler {
+  position: relative;
+  width: 100%;
+  max-width: 1400px; /* Ekranda çok büyümesin diye sınır */
+  aspect-ratio: 2000 / 857; 
+}
+
+#map-svg-wrap {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+}
+
+#map-svg-wrap svg {
+  width: 100%; height: 100%;
+  opacity: 0.8; /* Harita artık daha belirgin */
+  filter: saturate(0.6) brightness(0.6);
+  transition: all 0.5s ease;
+}
+
+/* SVG içindeki ülkelerin (path) geçiş animasyonu */
+#map-svg-wrap svg path {
+  transition: fill 0.5s ease, stroke 0.5s ease;
+  stroke: rgba(255,255,255,0.1);
+  stroke-width: 0.5;
+}
+
+#map-overlay {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;
+}
+#map-overlay * { pointer-events: auto; }
 
 .state-marker{position:absolute;transform:translate(-50%,-50%);cursor:pointer;z-index:5;transition:all 0.3s ease}
 .state-marker:hover{z-index:10;transform:translate(-50%,-50%) scale(1.25)}
@@ -185,8 +220,9 @@ html,body{height:100%;overflow:hidden;background:var(--bg-dark);color:var(--text
   </div>
   <div id="main">
     <div id="map-container">
-      <div id="map-svg-wrap"></div>
-      <div id="map-overlay"></div>
+      <div id="map-scaler">
+        <div id="map-svg-wrap"></div>
+        <div id="map-overlay"></div>
       <div id="legend">
         <div class="item"><div class="dot" style="background:var(--gold);box-shadow:0 0 5px rgba(201,168,76,0.5)"></div><span style="color:var(--gold)">Türk Devleti</span></div>
         <div class="item"><div class="dot" style="background:#4a9;box-shadow:0 0 5px rgba(74,170,153,0.4)"></div><span style="color:#6ee7b7">Türk-İslam Devleti</span></div>
@@ -477,6 +513,7 @@ const PERIODS = [
   description:"Yavuz'un Doğu seferleri ve Kanuni'nin yarım yüzyıllık hükümranlığı. Osmanlı'nın en parlak çağı.",
   states:[
     {name:"Osmanlı İmparatorluğu",type:"turk-islam",lat:39,lon:33,
+     territories:["Turkey", "Syria", "Iraq", "Egypt", "Greece", "Bulgaria", "Serbia", "Bosnia and Herzegovina", "Macedonia", "Albania", "Romania", "Libya", "Israel", "Lebanon", "Jordan", "Algeria", "Tunisia"],
       details:{period:"1512 – 1566",leaders:["Yavuz Sultan Selim (1512-1520)","Kanuni Sultan Süleyman (1520-1566)"],
         achievements:["Halifeliğin Osmanlı'ya geçişi (1517)","Üç kıtada hakimiyet","Süleymaniye Camii","Preveze Zaferi (1538)","Mohaç Zaferi (1526)","Çaldıran Zaferi (1514)"],
         culture:["Divan edebiyatı altın çağı (Baki, Fuzuli)","Mimar Sinan eserleri","Ebru, hat, çini sanatı","İznik çinileri"],
@@ -709,7 +746,6 @@ function render() {
   infoDesc.textContent = p.description;
   periodCounter.textContent = `${currentIdx+1} / ${PERIODS.length}`;
   
-  // Info wars
   infoWars.innerHTML = '';
   p.wars.forEach(w => {
     const tag = document.createElement('div');
@@ -719,61 +755,79 @@ function render() {
     infoWars.appendChild(tag);
   });
   
-  // Render timeline
   renderTimeline();
-  
-  // Clear overlay
   overlay.innerHTML = '';
   
-  // Collect all states for war line positions
-  const allStates = [...p.states, ...p.enemies];
-  
-  // Draw war lines
-  p.wars.forEach(w => {
-    const fromS = allStates.find(s=>s.name===w.from);
-    const toS = allStates.find(s=>s.name===w.to);
-    if(!fromS||!toS) return;
-    const fp = geoToPercent(fromS.lat, fromS.lon);
-    const tp = geoToPercent(toS.lat, toS.lon);
-    
-    // SVG line
-    const svgNs = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(svgNs,'svg');
-    svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:3;pointer-events:none;overflow:visible';
-    const line = document.createElementNS(svgNs,'line');
-    line.setAttribute('x1', fp.x+'%');line.setAttribute('y1', fp.y+'%');
-    line.setAttribute('x2', tp.x+'%');line.setAttribute('y2', tp.y+'%');
-    line.setAttribute('stroke','rgba(217,64,64,0.4)');line.setAttribute('stroke-width','1.5');
-    line.setAttribute('stroke-dasharray','6,4');
-    svg.appendChild(line);
-    overlay.appendChild(svg);
-    
-    // War badge
-    const badge = document.createElement('div');
-    badge.className = 'war-badge';
-    badge.style.left = ((fp.x+tp.x)/2)+'%';
-    badge.style.top = ((fp.y+tp.y)/2)+'%';
-    const shortName = w.name.length > 28 ? w.name.substring(0,28)+'…' : w.name;
-    badge.textContent = '⚔ '+shortName;
-    badge.onclick = () => showWarDetail(w);
-    overlay.appendChild(badge);
-  });
-  
-  // Draw enemy markers
-  p.enemies.forEach(s => {
-    const pos = geoToPercent(s.lat, s.lon);
-    const m = createMarker(s, pos, s.type||'enemy');
-    overlay.appendChild(m);
-  });
-  
-  // Draw Turkish state markers
-  p.states.forEach(s => {
-    const pos = geoToPercent(s.lat, s.lon);
-    const m = createMarker(s, pos, s.type);
-    overlay.appendChild(m);
+  // === YENİ ÖZELLİK: SVG ÜLKELERİNİ RENKLENDİRME ===
+  // Önce tüm haritayı standart rengine döndür
+  document.querySelectorAll('#map-svg-wrap svg path').forEach(path => {
+    path.style.fill = '#2a3441'; // Koyu okyanus/gece temasına uygun kara rengi
   });
 
-  // Panel state
+  // Türk devletlerinin topraklarını boya
+  if(p.states) {
+    p.states.forEach(state => {
+      if(state.territories) {
+        state.territories.forEach(countryName => {
+          let path = document.querySelector(`#map-svg-wrap svg path[name="${countryName}"]`);
+          if(path) path.style.fill = 'rgba(201, 168, 76, 0.7)'; // Altın sarısı (Transparan)
+        });
+      }
+      // Merkez noktası (Başkent / Marker)
+      if(state.lat && state.lon) {
+         overlay.appendChild(createMarker(state, geoToPercent(state.lat, state.lon), state.type));
+      }
+    });
+  }
+
+  // Düşman devletlerin topraklarını boya
+  if(p.enemies) {
+    p.enemies.forEach(enemy => {
+      if(enemy.territories) {
+        enemy.territories.forEach(countryName => {
+          let path = document.querySelector(`#map-svg-wrap svg path[name="${countryName}"]`);
+          if(path) path.style.fill = 'rgba(122, 139, 160, 0.6)'; // Gri/Mavi Düşman Rengi
+        });
+      }
+      if(enemy.lat && enemy.lon) {
+         overlay.appendChild(createMarker(enemy, geoToPercent(enemy.lat, enemy.lon), enemy.type || 'enemy'));
+      }
+    });
+  }
+  // ================================================
+
+  const allStates = [...(p.states||[]), ...(p.enemies||[])];
+  
+  if(p.wars) {
+    p.wars.forEach(w => {
+      const fromS = allStates.find(s=>s.name===w.from);
+      const toS = allStates.find(s=>s.name===w.to);
+      if(!fromS||!toS) return;
+      const fp = geoToPercent(fromS.lat, fromS.lon);
+      const tp = geoToPercent(toS.lat, toS.lon);
+      
+      const svgNs = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(svgNs,'svg');
+      svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:3;pointer-events:none;overflow:visible';
+      const line = document.createElementNS(svgNs,'line');
+      line.setAttribute('x1', fp.x+'%');line.setAttribute('y1', fp.y+'%');
+      line.setAttribute('x2', tp.x+'%');line.setAttribute('y2', tp.y+'%');
+      line.setAttribute('stroke','rgba(217,64,64,0.6)');
+      line.setAttribute('stroke-width','2');
+      line.setAttribute('stroke-dasharray','6,4');
+      svg.appendChild(line);
+      overlay.appendChild(svg);
+      
+      const badge = document.createElement('div');
+      badge.className = 'war-badge';
+      badge.style.left = ((fp.x+tp.x)/2)+'%';
+      badge.style.top = ((fp.y+tp.y)/2)+'%';
+      badge.textContent = '⚔ '+ (w.name.length > 28 ? w.name.substring(0,28)+'…' : w.name);
+      badge.onclick = () => showWarDetail(w);
+      overlay.appendChild(badge);
+    });
+  }
+  
   infoBox.className = detailPanel.classList.contains('open') ? 'shifted' : '';
 }
 
