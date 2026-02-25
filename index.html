@@ -118,18 +118,48 @@ html,body{height:100%;overflow:hidden;background:var(--bg-dark);color:var(--text
   font-family:'Noto Sans',sans-serif}
 .info-war-tag:hover{background:rgba(217,64,64,0.25)}
 
-#detail-panel{width:0;overflow:hidden;flex-shrink:0;
-  background:linear-gradient(180deg,rgba(14,21,32,0.99),rgba(8,12,20,0.99));
-  border-left:1px solid var(--gold-dim);transition:width 0.3s ease;z-index:15}
-#detail-panel.open{width:400px;overflow-y:auto}
-#detail-header{padding:12px 16px;display:flex;justify-content:space-between;align-items:center;
-  border-bottom:1px solid var(--gold-dim);position:sticky;top:0;z-index:2;
-  background:linear-gradient(180deg,rgba(14,21,32,0.99),rgba(14,21,32,0.95))}
-#detail-header h3{font-family:'Cinzel',serif;font-size:13px;letter-spacing:1px;flex:1;margin-right:8px}
-#detail-close{background:none;border:1px solid rgba(221,213,196,0.2);color:var(--text);cursor:pointer;
-  padding:3px 10px;border-radius:4px;font-size:11px;transition:all 0.2s;white-space:nowrap}
-#detail-close:hover{border-color:var(--gold);color:var(--gold)}
-#detail-content{padding:14px 16px}
+#detail-panel {
+  width: 0;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: linear-gradient(180deg,rgba(14,21,32,0.99),rgba(8,12,20,0.99));
+  border-left: 1px solid var(--gold-dim);
+  transition: width 0.3s ease;
+  z-index: 15;
+  display: flex;          /* YENİ EKLENDİ */
+  flex-direction: column; /* YENİ EKLENDİ */
+  height: 100%;           /* YENİ EKLENDİ */
+}
+#detail-panel.open {
+  width: 400px;
+  /* overflow-y: auto; BURAYI KALDIRDIK Kİ ÇİFT SCROLL OLMASIN */
+}
+#detail-header {
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--gold-dim);
+  background: inherit;
+  flex-shrink: 0;         /* YENİ EKLENDİ: Başlık yukarıda sabit kalsın */
+}
+#detail-header h3 {
+  font-family: 'Cinzel', serif;
+  font-size: 13px;
+  letter-spacing: 1px;
+  flex: 1;
+  margin-right: 8px;
+}
+#detail-close {
+  background: none; border: 1px solid rgba(221,213,196,0.2); color: var(--text); cursor: pointer;
+  padding: 3px 10px; border-radius: 4px; font-size: 11px; transition: all 0.2s; white-space: nowrap;
+}
+#detail-close:hover { border-color: var(--gold); color: var(--gold); }
+#detail-content {
+  padding: 14px 16px;
+  flex: 1;                /* YENİ EKLENDİ */
+  overflow-y: auto;       /* YENİ EKLENDİ: Sadece içerik aşağı/yukarı kaysın */
+}
 
 .detail-section{margin-bottom:14px}
 .detail-section-title{font-family:'Cinzel',serif;font-size:11px;color:var(--gold);letter-spacing:1.5px;
@@ -261,16 +291,27 @@ html,body{height:100%;overflow:hidden;background:var(--bg-dark);color:var(--text
 </div>
 
 <script>
-// ====== GEO PROJECTION (Miller) ======
+// ====== YENİ VE KESİN GEO PROJECTION (SimpleMaps SVG'si için özel) ======
 function geoToPercent(lat, lon) {
-  // Map bounds for crop view focusing on Eurasia
-  const xSvg = 380.19 + lon * 2.1127;
-  const latRad = lat * Math.PI / 180;
-  const yMiller = 1.25 * Math.log(Math.tan(Math.PI / 4 + 0.4 * latRad));
-  const ySvg = 278 - yMiller * 121.0;
-  const xPct = (xSvg - 280) / (800 - 280) * 100;
-  const yPct = (ySvg - 30) / (420 - 30) * 100;
-  return { x: Math.max(1, Math.min(99, xPct)), y: Math.max(1, Math.min(99, yPct)) };
+  const xPct = (lon + 180) / 3.6;
+  let yPct;
+  
+  // Enlemlere (Y ekseni) göre kavis düzeltmesi
+  if (lat > 60) {
+    yPct = 11.6 - (lat - 60) * 0.72;
+  } else if (lat > 40) {
+    yPct = 26 - (lat - 40) * 0.72;
+  } else if (lat > 20) {
+    yPct = 44.3 - (lat - 20) * 0.915;
+  } else if (lat > 0) {
+    yPct = 56.8 - lat * 0.625;
+  } else if (lat > -20) {
+    yPct = 56.8 - lat * 0.59;
+  } else {
+    yPct = 68.6 - (lat + 20) * 0.65;
+  }
+  
+  return { x: xPct, y: yPct };
 }
 
 // ====== DATA ======
@@ -779,35 +820,38 @@ function render() {
   renderTimeline();
   overlay.innerHTML = '';
   
-  // === YENİ ÖZELLİK: SVG ÜLKELERİNİ RENKLENDİRME ===
-  // Önce tüm haritayı standart rengine döndür
+  // TÜM HARİTAYI SIFIRLA (Karanlık yap)
   document.querySelectorAll('#map-svg-wrap svg path').forEach(path => {
-    path.style.fill = '#2a3441'; // Koyu okyanus/gece temasına uygun kara rengi
+    path.style.fill = '#2a3441'; 
   });
 
-  // Türk devletlerinin topraklarını boya
+  // TÜRK DEVLETLERİNİN TOPRAKLARINI BOYA
   if(p.states) {
     p.states.forEach(state => {
       if(state.territories) {
         state.territories.forEach(countryName => {
-          let path = document.querySelector(`#map-svg-wrap svg path[name="${countryName}"]`);
-          if(path) path.style.fill = 'rgba(201, 168, 76, 0.7)'; // Altın sarısı (Transparan)
+          // HEM NAME HEM DE CLASS özelliğinde ara (Turkey gibi istisnalar için)
+          let paths = document.querySelectorAll(`#map-svg-wrap svg path[name="${countryName}"], #map-svg-wrap svg path[class="${countryName}"]`);
+          paths.forEach(path => {
+            path.style.fill = 'rgba(201, 168, 76, 0.7)'; // Altın sarısı
+          });
         });
       }
-      // Merkez noktası (Başkent / Marker)
       if(state.lat && state.lon) {
          overlay.appendChild(createMarker(state, geoToPercent(state.lat, state.lon), state.type));
       }
     });
   }
 
-  // Düşman devletlerin topraklarını boya
+  // DÜŞMAN DEVLETLERİN TOPRAKLARINI BOYA
   if(p.enemies) {
     p.enemies.forEach(enemy => {
       if(enemy.territories) {
         enemy.territories.forEach(countryName => {
-          let path = document.querySelector(`#map-svg-wrap svg path[name="${countryName}"]`);
-          if(path) path.style.fill = 'rgba(122, 139, 160, 0.6)'; // Gri/Mavi Düşman Rengi
+          let paths = document.querySelectorAll(`#map-svg-wrap svg path[name="${countryName}"], #map-svg-wrap svg path[class="${countryName}"]`);
+          paths.forEach(path => {
+            path.style.fill = 'rgba(122, 139, 160, 0.6)'; // Düşman Grisi
+          });
         });
       }
       if(enemy.lat && enemy.lon) {
@@ -815,9 +859,8 @@ function render() {
       }
     });
   }
-  // ================================================
 
-  const allStates = [...(p.states||[]), ...(p.enemies||[])];
+  const allStates = [...(p.states||[]), ...(p.enemies||
   
   if(p.wars) {
     p.wars.forEach(w => {
