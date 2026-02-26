@@ -1398,14 +1398,20 @@ function render() {
   // === TÜRKİYE İL HARİTASI (Beylikler dönemleri için) ===
   const isBeylikPeriod = [1077, 1299].includes(p.year);
   if(isBeylikPeriod && trSvgLoaded) {
-    // Türkiye'nin dünya haritasındaki konumunu hesapla
-    const nw = geoToPercent(42.5, 25.5); // Kuzeybatı
-    const se = geoToPercent(35.5, 45);   // Güneydoğu
+    // Türkiye'nin world.svg'deki gerçek koordinatları (SVG 2000x857)
+    // Turkey paths: x=1121.5-1223.5, y=231.5-271.8
+    const trLeft = 1121.5 / 2000 * 100;   // 56.08%
+    const trTop = 231.5 / 857 * 100;      // 27.02%
+    const trRight = 1223.5 / 2000 * 100;  // 61.18%
+    const trBottom = 271.8 / 857 * 100;   // 31.72%
+    // tr.svg iç padding kompanzasyonu (paths 0.1-938 arası, yani %93.8 doluluk)
+    const trW = (trRight - trLeft) / 0.938;
+    const trH = (trBottom - trTop) / 0.917;
     trSvgWrap.style.display = 'block';
-    trSvgWrap.style.left = nw.x + '%';
-    trSvgWrap.style.top = nw.y + '%';
-    trSvgWrap.style.width = (se.x - nw.x) + '%';
-    trSvgWrap.style.height = (se.y - nw.y) + '%';
+    trSvgWrap.style.left = trLeft + '%';
+    trSvgWrap.style.top = trTop + '%';
+    trSvgWrap.style.width = trW + '%';
+    trSvgWrap.style.height = trH + '%';
     // Tüm illeri temizle
     document.querySelectorAll('#tr-svg-wrap svg path').forEach(path => {
       path.style.fill = 'rgba(40,50,60,0.5)';
@@ -1425,8 +1431,9 @@ function render() {
 
   // Savaş çizgileri ve rozetleri
   const allStates = [...(p.states||[]), ...(p.enemies||[])];
+  const warPositions = []; // Önceki badge pozisyonlarını takip et
   if(p.wars) {
-    p.wars.forEach(w => {
+    p.wars.forEach((w, wi) => {
       const fromS = allStates.find(s=>s.name===w.from);
       const toS = allStates.find(s=>s.name===w.to);
       if(!fromS||!toS) return;
@@ -1445,10 +1452,33 @@ function render() {
       svg.appendChild(line);
       overlay.appendChild(svg);
       
+      // Badge pozisyonu - çakışma varsa kaydır
+      let bx = (fp.x+tp.x)/2;
+      let by = (fp.y+tp.y)/2;
+      const minDist = 2.5; // Minimum mesafe (%)
+      let attempts = 0;
+      while(attempts < 8) {
+        let tooClose = false;
+        for(const prev of warPositions) {
+          const dx = bx - prev.x, dy = by - prev.y;
+          if(Math.sqrt(dx*dx+dy*dy) < minDist) {
+            tooClose = true;
+            break;
+          }
+        }
+        if(!tooClose) break;
+        // Farklı yönlere kaydır
+        const angle = (attempts * 45 + wi * 30) * Math.PI / 180;
+        bx = (fp.x+tp.x)/2 + Math.cos(angle) * minDist * (1 + attempts * 0.3);
+        by = (fp.y+tp.y)/2 + Math.sin(angle) * minDist * (1 + attempts * 0.3);
+        attempts++;
+      }
+      warPositions.push({x: bx, y: by});
+      
       const badge = document.createElement('div');
       badge.className = 'war-badge';
-      badge.style.left = ((fp.x+tp.x)/2)+'%';
-      badge.style.top = ((fp.y+tp.y)/2)+'%';
+      badge.style.left = bx+'%';
+      badge.style.top = by+'%';
       badge.textContent = '⚔ '+ (w.name.length > 28 ? w.name.substring(0,28)+'…' : w.name);
       badge.onclick = () => showWarDetail(w);
       overlay.appendChild(badge);
