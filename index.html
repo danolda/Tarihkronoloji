@@ -29,8 +29,15 @@ html,body{height:100%;overflow:hidden;background:var(--bg-dark);color:var(--text
 
 #main{flex:1;display:flex;overflow:hidden;position:relative}
 
-#map-container{flex:1;background:var(--bg-dark);display:flex;align-items:center;justify-content:center;overflow:hidden}
-#map-scaler{position:relative;width:100%;max-width:1400px;aspect-ratio:2000/857}
+#map-container{flex:1;background:var(--bg-dark);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+#map-scaler{position:relative;width:100%;max-width:1400px;aspect-ratio:2000/857;transform-origin:center center;transition:transform 0.15s ease-out;cursor:grab}
+#map-scaler.dragging{cursor:grabbing;transition:none}
+#zoom-controls{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:4px;z-index:12}
+.zoom-btn{width:32px;height:32px;background:rgba(8,12,20,0.9);border:1px solid var(--gold-dim);color:var(--gold);
+  cursor:pointer;border-radius:4px;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;
+  transition:all 0.2s;backdrop-filter:blur(10px)}
+.zoom-btn:hover{background:rgba(201,168,76,0.15);border-color:var(--gold)}
+#zoom-level{font-size:8px;color:var(--text-dim);text-align:center}
 #map-svg-wrap{position:absolute;top:0;left:0;width:100%;height:100%}
 #map-svg-wrap svg{width:100%;height:100%;opacity:0.85;filter:saturate(0.6) brightness(0.6);transition:all 0.5s ease}
 #map-svg-wrap svg path{transition:fill 0.5s ease,stroke 0.5s ease;stroke:rgba(255,255,255,0.08);stroke-width:0.5}
@@ -221,16 +228,22 @@ html,body{height:100%;overflow:hidden;background:var(--bg-dark);color:var(--text
         <div id="legend">
           <div class="item"><div class="dot" style="background:var(--gold);box-shadow:0 0 5px rgba(201,168,76,0.5)"></div><span style="color:var(--gold)">Türk Devleti</span></div>
           <div class="item"><div class="dot" style="background:#4a9;box-shadow:0 0 5px rgba(74,170,153,0.4)"></div><span style="color:#6ee7b7">Türk-İslam Devleti</span></div>
-          <div class="item"><div class="dot" style="background:#f0a050"></div><span style="color:#f0a050">Diğer Türk Devleti</span></div>
+          <div class="item"><div class="dot" style="background:#f0a050"></div><span style="color:#f0a050">Diğer Türk Beyliği</span></div>
           <div class="item"><div class="dot" style="background:var(--enemy)"></div><span style="color:#9ab">Diğer Devletler</span></div>
           <div class="item"><div class="dot" style="background:var(--red)"></div><span style="color:#f87171">Savaş / Çatışma</span></div>
-          <div style="margin-top:3px;color:var(--text-dim);font-size:9px;font-style:italic">Devletlere ve savaşlara tıklayın</div>
+          <div style="margin-top:3px;color:var(--text-dim);font-size:9px;font-style:italic">Devletlere tıklayın • Scroll ile zoom</div>
         </div>
         <div id="info-box">
           <h2 id="info-era"></h2>
           <p id="info-desc"></p>
           <div id="info-wars"></div>
         </div>
+      </div>
+      <div id="zoom-controls">
+        <button class="zoom-btn" onclick="zoomIn()" title="Yakınlaştır">+</button>
+        <div id="zoom-level">100%</div>
+        <button class="zoom-btn" onclick="zoomOut()" title="Uzaklaştır">−</button>
+        <button class="zoom-btn" onclick="zoomReset()" title="Sıfırla" style="font-size:11px;margin-top:4px">⟲</button>
       </div>
     </div>
     <div id="detail-panel">
@@ -273,13 +286,20 @@ function geoToPercent(lat, lon) {
 
 // ====== SVG ÜLKE BOYAMA - FIX: hem name hem class ile arama ======
 function colorCountry(countryName, fillColor) {
-  // 1) name attribute ile
-  let paths = document.querySelectorAll(`#map-svg-wrap svg path[name="${countryName}"]`);
-  paths.forEach(p => p.style.fill = fillColor);
-  // 2) class attribute ile (Turkey, Russia, China, France, Italy, Greece, UK vs.)
-  const escaped = CSS.escape(countryName);
-  let classPaths = document.querySelectorAll(`#map-svg-wrap svg path.${escaped}`);
-  classPaths.forEach(p => p.style.fill = fillColor);
+  // 1) name attribute ile (tek parçalı ülkeler)
+  document.querySelectorAll(`#map-svg-wrap svg path[name="${countryName}"]`)
+    .forEach(p => p.style.fill = fillColor);
+  // 2) class attribute ile (çok parçalı ülkeler: Turkey, Russian Federation, United Kingdom, France, China, Greece, Italy vs.)
+  document.querySelectorAll(`#map-svg-wrap svg path[class="${countryName}"]`)
+    .forEach(p => p.style.fill = fillColor);
+  // 3) id attribute ile (2 harfli ISO kodları: TR, RU, GB vs.) - yedek
+  const isoMap = {'Turkey':'TR','Russian Federation':'RU','United Kingdom':'GB','France':'FR',
+    'China':'CN','Greece':'GR','Italy':'IT','Australia':'AU','Azerbaijan':'AZ','Cyprus':'CY',
+    'Denmark':'DK','Norway':'NO','Oman':'OM','Japan':'JP','Indonesia':'ID'};
+  if(isoMap[countryName]) {
+    const el = document.getElementById(isoMap[countryName]);
+    if(el) el.style.fill = fillColor;
+  }
 }
 
 // Renk paletleri: farklı Türk devletleri için
@@ -553,12 +573,16 @@ const PERIODS = [
       details:{period:"909-1171",leaders:[],achievements:["El-Ezher Üniversitesi (970)"],culture:["Şii İslam"],scientists:[{name:"İbn el-Heysem",work:"Optik biliminin kurucusu"}],events:["Selçuklularla mezhep mücadelesi"]}},
     {name:"Gazneliler",type:"enemy",lat:33,lon:68,capital:"Gazne",
       territories:["Pakistan"],
-      details:{period:"963-1187",leaders:["Sultan Mesud"],achievements:[],culture:[],scientists:[],events:["Dandanakan'da yenilgi (1040)"]}}
+      details:{period:"963-1187",leaders:["Sultan Mesud"],achievements:[],culture:[],scientists:[],events:["Dandanakan'da yenilgi (1040)"]}},
+    {name:"Karahitaylar",type:"enemy",lat:43,lon:75,capital:"Balasagun",
+      territories:["Kyrgyzstan","Kazakhstan"],
+      details:{period:"1124-1218",leaders:["Yelu Dashi"],achievements:["Orta Asya hakimiyeti"],culture:["Budizm"],scientists:[],events:["Katvan'da Selçukluları yenme (1141)"]}}
   ],
   wars:[
     {from:"Büyük Selçuklu İmp.",to:"Gazneliler",name:"Dandanakan Muharebesi",year:"1040",result:"Selçuklu zaferi – Devlet resmen kuruldu"},
     {from:"Büyük Selçuklu İmp.",to:"Bizans İmp.",name:"MALAZGİRT MUHAREBESİ",year:"26 Ağustos 1071",result:"Büyük zafer – Anadolu kapısı Türklere açıldı"},
-    {from:"Büyük Selçuklu İmp.",to:"Bizans İmp.",name:"Pasinler Savaşı",year:"1048",result:"Selçuklu zaferi – Anadolu'ya ilk büyük akın"}
+    {from:"Büyük Selçuklu İmp.",to:"Bizans İmp.",name:"Pasinler Savaşı",year:"1048",result:"Selçuklu zaferi – Anadolu'ya ilk büyük akın"},
+    {from:"Büyük Selçuklu İmp.",to:"Karahitaylar",name:"Katvan Savaşı",year:"1141",result:"Sultan Sencer yenildi – Selçuklu çöküşü hızlandı"}
   ]
 },
 {
@@ -625,6 +649,17 @@ const PERIODS = [
         achievements:["Divriği Ulu Camii – UNESCO Dünya Mirası"],culture:[],scientists:[],
         architecture:["Divriği Ulu Camii ve Darüşşifası (1228-1229) – UNESCO Dünya Mirası"],
         events:["Divriği'nin inşası","Moğollara tabi olma"]
+      }},
+    {name:"Çaka Beyliği",type:"turk3",lat:38.4,lon:26.5,capital:"İzmir",
+      territories:[],
+      details:{
+        period:"1081 – 1097",
+        significance:"İzmir merkezli ilk Türk denizci beyliği. Çaka Bey ilk Türk donanmasını kurdu ve Ege adalarını ele geçirdi. Bizans'a karşı deniz gücü oluşturan ilk Türk komutanıdır.",
+        leaders:["Çaka Bey"],
+        achievements:["İlk Türk donanmasını kurma","Ege adalarını fethetme","Bizans'a karşı ilk Türk deniz savaşları"],
+        culture:["Denizcilik geleneğinin başlangıcı"],scientists:[],
+        architecture:[],
+        events:["İzmir'in alınması (1081)","Ege adalarının fethi","Midilli, Sakız adaları","I. Kılıçarslan ile ittifak girişimi","Bizans entrikasıyla ortadan kaldırılma (1097)"]
       }},
     {name:"Harzemşahlar",type:"turk2",lat:40,lon:60,capital:"Ürgenç / Gürgenç",
       territories:["Turkmenistan","Uzbekistan","Iran","Afghanistan"],
@@ -705,6 +740,50 @@ const PERIODS = [
         period:"1302 – 1410",significance:"Manisa merkezli beylik. Denizcilik faaliyetleri.",
         leaders:["Saruhan Bey"],achievements:["Manisa'nın imarı"],culture:[],scientists:[],
         architecture:["Manisa Ulu Camii (1376)"],events:["Osmanlı'ya katılma"]
+      }},
+    {name:"Karesioğulları",type:"turk4",lat:39.6,lon:27.2,capital:"Balıkesir",
+      territories:[],
+      details:{
+        period:"1297 – 1360",
+        significance:"Balıkesir merkezli beylik. Osmanlı'ya katılan ilk beylik (1360). Donanması Osmanlı'nın ilk deniz gücünün temelini oluşturdu. Hacı İlbey ve Evrenos Bey gibi komutanlar Osmanlı hizmetine geçti.",
+        leaders:["Karesi Bey","Demirhan Bey"],
+        achievements:["Osmanlı'ya katılan ilk beylik","Osmanlı donanmasının temeli"],culture:[],scientists:[],
+        architecture:[],events:["Osmanlı'ya katılma (1360) – Rumeli fetihlerinin yolu açıldı"]
+      }},
+    {name:"Menteşeoğulları",type:"turk2",lat:37.2,lon:28.3,capital:"Milas / Beçin",
+      territories:[],
+      details:{
+        period:"1261 – 1424",significance:"Muğla-Milas merkezli beylik. Ege ve Akdeniz'de deniz ticareti ve korsanlık faaliyetleri yürüttü.",
+        leaders:["Menteşe Bey"],achievements:["Güneybatı Anadolu deniz ticareti"],culture:[],scientists:[],
+        architecture:["Beçin Kalesi","Balat İlyas Bey Camii (1404)"],events:["Osmanlı'ya katılma"]
+      }},
+    {name:"Hamidoğulları",type:"turk3",lat:37.7,lon:30.3,capital:"Eğirdir / Isparta",
+      territories:[],
+      details:{
+        period:"1280 – 1391",significance:"Isparta-Eğirdir merkezli beylik. Topraklarının bir kısmını Osmanlı'ya para karşılığı sattı.",
+        leaders:["Hamid Bey","Hüsameddin İlyas Bey"],achievements:["Antalya bölgesinin kontrolü"],culture:[],scientists:[],
+        architecture:["Eğirdir Hızırbey Camii"],events:["Toprak satışı ile Osmanlı'ya katılma"]
+      }},
+    {name:"Candaroğulları",type:"turk5",lat:41.5,lon:33.5,capital:"Kastamonu / Sinop",
+      territories:[],
+      details:{
+        period:"1291 – 1461",significance:"Kastamonu-Sinop merkezli beylik. Karadeniz ticaretinde etkin. Fatih Sultan Mehmed tarafından ortadan kaldırıldı.",
+        leaders:["Şemseddin Yaman Candar","İsfendiyar Bey"],achievements:["Karadeniz ticaret kontrolü"],culture:[],scientists:[],
+        architecture:["Kastamonu Atabey Camii"],events:["Fatih tarafından ilhak (1461)"]
+      }},
+    {name:"Dulkadiroğulları",type:"turk2",lat:37.6,lon:36.9,capital:"Elbistan / Maraş",
+      territories:[],
+      details:{
+        period:"1337 – 1522",significance:"Maraş-Elbistan merkezli beylik. Osmanlı-Memlük arasında tampon devlet. Yavuz Sultan Selim'in annesi Dulkadiroğlu prensesi. 1522'de Osmanlı'ya katıldı.",
+        leaders:["Zülkadir Bey","Alaüddevle Bozkurt Bey"],achievements:["Osmanlı-Memlük arası denge politikası"],culture:[],scientists:[],
+        architecture:["Elbistan Ulu Camii"],events:["Osmanlı'ya katılma (1522)"]
+      }},
+    {name:"Ramazanoğulları",type:"turk4",lat:37,lon:35.3,capital:"Adana",
+      territories:[],
+      details:{
+        period:"1352 – 1608",significance:"Adana-Tarsus merkezli beylik. Çukurova bölgesine hakimdi. En son Osmanlı'ya katılan Anadolu beyliği.",
+        leaders:["Ramazan Bey"],achievements:["Çukurova hakimiyeti"],culture:[],scientists:[],
+        architecture:["Adana Ulu Camii (Ramazanoğlu Camii)"],events:["Osmanlı'ya katılma (1608)"]
       }}
   ],
   enemies:[
@@ -733,7 +812,7 @@ const PERIODS = [
         culture:["Gazi-derviş sentezi","İlk Osmanlı camileri","Ahilik devam"],
         scientists:[],
         architecture:["Edirne Eski Camii (1414, sonra)","Bursa Ulu Camii (1399, Yıldırım)","Bursa Yeşil Camii (plan, Çelebi Mehmed)","Edirne Muradiye Camii"],
-        events:["Sırpsındığı Savaşı (1364)","I. KOSOVA (1389) – I. Murad şehit","Niğbolu Savaşı (1396)","ANKARA SAVAŞI (1402)","Fetret Devri başlangıcı (1402-1413)"]
+        events:["Edirne'nin fethi (1362) – I. Murad","Sırpsındığı Savaşı (1364) – İlk büyük Balkan zaferi","Çirmen Savaşı (1371)","I. KOSOVA MEYDAN MUHAREBESİ (1389) – I. Murad şehit, büyük zafer","I. Murad: Devşirme ve Yeniçeri Ocağı kuruldu, Tımar sistemi başladı","Yıldırım Bayezid tahta çıktı (1389)","Niğbolu Savaşı (1396) – Son büyük Haçlı ordusu yenildi","İstanbul ilk kuşatması (1391-1395)","Anadolu Türk beyliklerinin ilhakı","ANKARA SAVAŞI (1402) – Timur'a yenilgi","FETRET DEVRİ (1402-1413) – Şehzadeler arası taht kavgası: Süleyman Çelebi (Rumeli), İsa Çelebi (Balıkesir), Musa Çelebi (Anadolu), Mehmed Çelebi (Amasya)","I. Mehmed Çelebi birliği sağladı (1413)","Şeyh Bedreddin İsyanı (1416) – Sosyal-dini isyan","Düzmece Mustafa Olayı (1421-1422)","Varna Savaşı (1444) – II. Murad"]
       }}
   ],
   enemies:[
@@ -761,18 +840,18 @@ const PERIODS = [
     {name:"Osmanlı İmparatorluğu",type:"turk-islam",lat:41,lon:29,capital:"İstanbul (1453'ten itibaren)",
       territories:["Turkey","Greece","Bulgaria","Macedonia","Albania","Serbia","Kosovo","Bosnia and Herzegovina","Romania"],
       details:{
-        period:"1413 – 1481",
-        significance:"Fatih Sultan Mehmed 29 Mayıs 1453'te İstanbul'u fethederek 1123 yıllık Bizans İmparatorluğu'na son verdi. Bu olay Orta Çağ'ın sonu, Yeni Çağ'ın başlangıcı olarak kabul edilir. Fatih Kanunnamesi ile devlet teşkilatı sistemleştirildi. Bilim ve sanat hamiliği ile İstanbul bir dünya başkenti haline getirildi.",
-        leaders:["I. Mehmed Çelebi (1413-1421)","II. Murad (1421-1451)","Fatih Sultan Mehmed (1451-1481)"],
-        achievements:["İSTANBUL'UN FETHİ (29 Mayıs 1453)","Şahi topları","Topkapı Sarayı inşası","Fatih Kanunnamesi (kanun üstünlüğü)","Sahn-ı Seman Medreseleri","Karadeniz Türk gölü","Varna Zaferi (1444)","II. Kosova Zaferi (1448)"],
+        period:"1413 – 1512",
+        significance:"Fatih Sultan Mehmed 29 Mayıs 1453'te İstanbul'u fethederek 1123 yıllık Bizans İmparatorluğu'na son verdi. Bu olay Orta Çağ'ın sonu, Yeni Çağ'ın başlangıcı olarak kabul edilir. Fatih Kanunnamesi ile devlet teşkilatı sistemleştirildi. Fatih'in ölümünden sonra (1481) oğulları II. Bayezid ve Cem Sultan arasında taht kavgası yaşandı. Cem Sultan yenilerek Avrupa'ya sığındı ve 13 yıl esir kaldı (Cem Sultan Olayı). II. Bayezid barışçıl bir politika izledi.",
+        leaders:["I. Mehmed Çelebi (1413-1421)","II. Murad (1421-1451)","Fatih Sultan Mehmed (1451-1481)","II. Bayezid (1481-1512)"],
+        achievements:["İSTANBUL'UN FETHİ (29 Mayıs 1453)","Şahi topları","Topkapı Sarayı inşası","Fatih Kanunnamesi (kanun üstünlüğü, kardeş katli)","Sahn-ı Seman Medreseleri","Karadeniz Türk gölü","Varna Zaferi (1444)","II. Kosova Zaferi (1448)","Otranto fethi (1480)","II. Bayezid dönemi: Bayezid Külliyesi, İlk Osmanlı tersanesi"],
         culture:["Bilim ve sanat koruyuculuğu","İstanbul'un imarı","Divan edebiyatı gelişimi"],
         scientists:[
           {name:"Ali Kuşçu (1403-1474)",work:"Risale fi'l-Hey'e (Astronomi), Risale fi'l-Hisab (Matematik). Semerkant'tan geldi, Sahn-ı Seman'da ders verdi. Fatih Camii medreselerinin müfredatını hazırladı.",patron:"Fatih Sultan Mehmed davet etti ve Sahn-ı Seman müderrisliğine atadı"},
           {name:"Akşemseddin (1389-1459)",work:"Maddetü'l-Hayat (Tıp), Risaletü'n-Nuriye. Mikrobun varlığına ilk kez işaret eden düşünür. Fatih'in hocası.",patron:"Fatih Sultan Mehmed'in hocası"},
           {name:"Molla Gürani (?-1488)",work:"İlk Osmanlı şeyhülislamı. Gazzâli'nin eserlerini okutan büyük alim.",patron:"Fatih Sultan Mehmed'in hocası ve şeyhülislamı"}
         ],
-        architecture:["Topkapı Sarayı (1478)","Fatih Camii ve Külliyesi (1470)","Sahn-ı Seman Medreseleri","Rumeli Hisarı (1452)","Edirne Üç Şerefeli Cami","Kapalıçarşı (1461)"],
-        events:["Fetret Devri sonu (1413)","Varna Savaşı (1444)","II. Kosova (1448)","İSTANBUL FETHİ (29 Mayıs 1453)","Amasra, Sinop, Trabzon fethi (1461)","Otlukbeli Savaşı (1473)","Otranto fethi (1480)"]
+        architecture:["Topkapı Sarayı (1478)","Fatih Camii ve Külliyesi (1470)","Sahn-ı Seman Medreseleri","Rumeli Hisarı (1452)","Kapalıçarşı (1461)","Bayezid Külliyesi, Edirne (1488) – Darüşşifa dahil","Bayezid Camii, İstanbul (1506)"],
+        events:["Fetret Devri sonu (1413)","Varna Savaşı (1444)","II. Kosova (1448)","İSTANBUL FETHİ (29 Mayıs 1453)","Amasra, Sinop, Trabzon fethi (1461)","Otlukbeli Savaşı (1473)","Otranto fethi (1480)","Fatih'in vefatı (1481)","Cem Sultan Olayı (1481-1495) – Cem yenilerek Avrupa'ya sığındı","II. Bayezid dönemi (1481-1512)","Venedik ile savaş (1499-1503)","İnebahtı Deniz Savaşı (1499)","Bayezid Külliyesi inşası (Edirne)","Şahkulu İsyanı (1511) – Safevi destekli","Yavuz Selim'in tahta çıkışı (1512)"]
       }}
   ],
   enemies:[
@@ -813,7 +892,7 @@ const PERIODS = [
           {name:"Baki (1526-1600)",work:"'Sultanü'ş-Şuara' (Şairler Sultanı). Kanuni Mersiyesi. Divan edebiyatının en büyük şairlerinden.",patron:"Kanuni Sultan Süleyman'ın nedimi"}
         ],
         architecture:["Süleymaniye Camii ve Külliyesi (1557)","Şehzadebaşı Camii (1548)","Selimiye Camii, Edirne (1575)","Hürrem Sultan Hamamı","Haseki Hürrem Darüşşifası"],
-        events:["Çaldıran (1514)","Mercidabık (1516)","Ridaniye (1517) – Halifelik geçti","Belgrad (1521)","Mohaç (1526)","I. Viyana Kuşatması (1529)","Preveze (1538)","Trabzon Deniz Seferi","Zigetvar ve Kanuni'nin vefatı (1566)"]
+        events:["Çaldıran Savaşı (1514) – Yavuz, Safevi yenildi","Turnadağ Savaşı (1515) – Yavuz, Dulkadiroğulları Osmanlı'ya katıldı","Mercidabık Savaşı (1516) – Yavuz, Memlük yenildi, Suriye alındı","Ridaniye Savaşı (1517) – Yavuz, Memlük yıkıldı, Halifelik Osmanlı'ya geçti","Mısır'ın alınması – Yavuz","Belgrad'ın fethi (1521) – Kanuni","Rodos'un fethi (1522) – Kanuni","MOHAÇ MUHAREBESİ (1526) – Kanuni: Macar Kralı öldü, Macaristan alındı","I. Viyana Kuşatması (1529) – Kanuni: Başarısız","İstanbul Antlaşması (1533) – Kanuni-Avusturya: Ferdinand Kanuni'ye eşit sayılmadı","Irakeyn Seferi (1534) – Kanuni: Bağdat ve Tebriz alındı","PREVEZE DENİZ SAVAŞI (1538) – Barbaros: Akdeniz Osmanlı gölü","Fransa'ya kapitülasyonlar verildi (1536)","Amasya Antlaşması (1555) – Kanuni-Safevi: İlk Osmanlı-İran barışı","Zigetvar Kuşatması ve Kanuni'nin vefatı (1566)","II. Selim dönemi (1566-1574)","Sokullu Mehmed Paşa'nın sadrazamlığı","Sakız Adası'nın fethi (1566)","Yemen'in fethi"]
       }}
   ],
   enemies:[
@@ -831,10 +910,12 @@ const PERIODS = [
       details:{period:"697-1797",leaders:[],achievements:["Akdeniz ticaret gücü"],culture:[],scientists:[],events:["Preveze yenilgisi (1538)"]}}
   ],
   wars:[
-    {from:"Osmanlı İmparatorluğu",to:"Safevi Devleti",name:"Çaldıran Muharebesi",year:"1514",result:"Osmanlı zaferi – Doğu Anadolu güvende"},
-    {from:"Osmanlı İmparatorluğu",to:"Memlük Sultanlığı",name:"Mısır Seferi (Mercidabık-Ridaniye)",year:"1516-1517",result:"Memlükler yıkıldı, Halifelik Osmanlı'ya geçti"},
+    {from:"Osmanlı İmparatorluğu",to:"Safevi Devleti",name:"Çaldıran Muharebesi",year:"1514",result:"Osmanlı zaferi – Doğu Anadolu güvende, Tebriz alındı"},
+    {from:"Osmanlı İmparatorluğu",to:"Memlük Sultanlığı",name:"Mercidabık Muharebesi",year:"1516",result:"Osmanlı zaferi – Suriye alındı"},
+    {from:"Osmanlı İmparatorluğu",to:"Memlük Sultanlığı",name:"Ridaniye Muharebesi",year:"1517",result:"Memlükler yıkıldı, Halifelik ve Mısır Osmanlı'ya geçti"},
     {from:"Osmanlı İmparatorluğu",to:"Kutsal Roma-Germen İmp.",name:"Mohaç Muharebesi",year:"1526",result:"Büyük zafer – Macaristan alındı"},
-    {from:"Osmanlı İmparatorluğu",to:"Venedik",name:"Preveze Deniz Savaşı",year:"1538",result:"Barbaros zaferi – Akdeniz Osmanlı gölü oldu"}
+    {from:"Osmanlı İmparatorluğu",to:"Venedik",name:"Preveze Deniz Savaşı",year:"1538",result:"Barbaros zaferi – Akdeniz Osmanlı gölü oldu"},
+    {from:"Osmanlı İmparatorluğu",to:"Safevi Devleti",name:"Amasya Antlaşması",year:"1555",result:"İlk Osmanlı-İran resmi barışı – Irak Osmanlı'da kaldı"}
   ]
 },
 {
@@ -845,18 +926,19 @@ const PERIODS = [
       territories:["Turkey","Greece","Bulgaria","Macedonia","Albania","Serbia","Kosovo","Bosnia and Herzegovina","Montenegro","Croatia","Romania","Hungary","Moldova","Syria","Iraq","Lebanon","Israel","Jordan","Egypt","Libya","Tunisia","Algeria","Saudi Arabia","Yemen","Cyprus"],
       details:{
         period:"1579 – 1699",
-        significance:"Sokullu Mehmed Paşa'nın ölümü (1579) ile Duraklama Dönemi başladı. IV. Murad Bağdat'ı geri aldı (1638). Köprülü ailesinin sadrazamlığı ile toparlanma dönemi yaşandı. Ancak II. Viyana Kuşatması (1683) başarısızlıkla sonuçlandı ve Karlofça Antlaşması (1699) ile Osmanlı tarihindeki ilk büyük toprak kaybı yaşandı. Bu antlaşma gerileme döneminin başlangıcıdır.",
-        leaders:["IV. Murad (1623-1640)","Köprülü Mehmed Paşa","Fazıl Ahmed Paşa","IV. Mehmed","Merzifonlu Kara Mustafa Paşa"],
-        achievements:["Bağdat'ın geri alınması (1638)","Köprülüler reformları","Girit fethi (1669)"],
-        culture:["Evliya Çelebi seyahatleri","Divan edebiyatı","Nef'i hicivleri"],
+        significance:"Sokullu Mehmed Paşa'nın ölümü (1579) ile Duraklama Dönemi başladı. Celali İsyanları Anadolu'yu kasıp kavurdu. IV. Murad Bağdat'ı geri aldı (1638). Köprülü ailesinin sadrazamlığı ile toparlanma dönemi yaşandı. Ancak II. Viyana Kuşatması (1683) başarısızlıkla sonuçlandı. Kutsal İttifak Savaşları sonunda Karlofça Antlaşması (1699) ile Osmanlı tarihindeki ilk büyük toprak kaybı yaşandı. Bu antlaşma gerileme döneminin resmi başlangıcıdır.",
+        leaders:["III. Murad (1574-1595)","III. Mehmed (1595-1603)","I. Ahmed (1603-1617)","II. Osman (Genç Osman, 1618-1622)","IV. Murad (1623-1640)","IV. Mehmed (1648-1687)","Köprülü Mehmed Paşa (vezir)","Fazıl Ahmed Paşa (vezir)","Merzifonlu Kara Mustafa Paşa (vezir)"],
+        achievements:["Bağdat'ın geri alınması (1638)","Köprülüler reformları","Girit fethi (1669)","Hotin Seferi (1621) – Genç Osman"],
+        culture:["Evliya Çelebi seyahatleri","Divan edebiyatı","Nef'i hicivleri","Minyatür sanatı devamı"],
         scientists:[
-          {name:"Evliya Çelebi (1611-1682)",work:"Seyahatname (10 cilt) – 40 yılda gezdiği Osmanlı coğrafyasını ve ötesini anlatan dünyanın en büyük gezi eserlerinden.",patron:"IV. Murad döneminde seyahatlere başladı"},
-          {name:"Kâtip Çelebi (1609-1657)",work:"Cihannüma (Coğrafya), Keşfü'z-Zünun (Bibliyografya ansiklopedisi), Mizanü'l-Hakk (Akılcılık).",patron:"IV. Murad ve sonrası"},
-          {name:"Hezarfen Ahmed Çelebi (17. yy)",work:"Galata Kulesi'nden Üsküdar'a uçuş deneyi yaptığı rivayet edilir.",patron:"IV. Murad dönemi"},
-          {name:"Nef'i (1572-1635)",work:"Siham-ı Kaza – Hiciv (yergi) edebiyatının zirvesi. Kasideleriyle de ünlü.",patron:"IV. Murad döneminde yaşadı ancak hicivleri nedeniyle idam edildi"}
+          {name:"Evliya Çelebi (1611-1682)",work:"Seyahatname (10 cilt) – 40 yılda gezdiği Osmanlı coğrafyasını anlatan dünyanın en büyük gezi eserlerinden.",patron:"IV. Murad döneminde seyahatlere başladı"},
+          {name:"Kâtip Çelebi (1609-1657)",work:"Cihannüma (Coğrafya), Keşfü'z-Zünun (Bibliyografya – 15.000 eser). Mizanü'l-Hakk (Akılcılık). Fezleke (Tarih).",patron:"IV. Murad ve Sultan İbrahim dönemi"},
+          {name:"Hezarfen Ahmed Çelebi (17. yy)",work:"Galata Kulesi'nden Üsküdar'a uçuş deneyi yaptığı rivayet edilir (1632).",patron:"IV. Murad dönemi"},
+          {name:"Lagari Hasan Çelebi (17. yy)",work:"Barut gücüyle fırlatılan roketle uçuş deneyi yaptığı rivayet edilir (1633).",patron:"IV. Murad dönemi"},
+          {name:"Nef'i (1572-1635)",work:"Siham-ı Kaza – Hiciv edebiyatının zirvesi. Kasideleriyle de ünlü.",patron:"IV. Murad döneminde yaşadı, hicivleri yüzünden idam edildi"}
         ],
-        architecture:["Sultan Ahmed Camii (Mavi Cami, 1616)","Selimiye Camii, Edirne (Mimar Sinan, 1575)","Yeni Camii, İstanbul (1665)","Mısır Çarşısı (1664)"],
-        events:["Sokullu'nun ölümü (1579)","İnebahtı (1571)","Celali İsyanları","Kasr-ı Şirin Antlaşması (1639)","II. VİYANA KUŞATMASI (1683)","KARLOFÇA ANTLAŞMASI (1699) – İlk büyük toprak kaybı"]
+        architecture:["Sultan Ahmed Camii (Mavi Cami, 1616) – I. Ahmed","Selimiye Camii, Edirne (Mimar Sinan, 1575) – II. Selim","Yeni Camii, İstanbul (1665) – Turhan Sultan","Mısır Çarşısı (1664)"],
+        events:["Sokullu'nun ölümü (1579) – DURAKLAMA BAŞLADI","Haçova Meydan Muharebesi (1596) – III. Mehmed, zafer","İnebahtı Deniz Savaşı (1571) – Haçlı zaferi ancak donanma 6 ayda yeniden kuruldu","Celali İsyanları (1596-1610) – Karayazıcı, Canbolatoğlu, Kalenderoğlu","Ekber-Erşed sistemi (I. Ahmed, 1603) – Kardeş katli yerine en büyük şehzade tahta geçer","Hotin Seferi (1621) – Genç Osman","Genç Osman'ın Yeniçeriler tarafından öldürülmesi (1622)","IV. Murad'ın Revan seferi (1635)","IV. Murad'ın Bağdat seferi (1638)","KASR-I ŞİRİN ANTLAŞMASI (1639) – IV. Murad ile İran arası sınır belirlendi (Günümüz Türkiye-İran sınırının temeli)","Vasvar Antlaşması (1664) – IV. Mehmed, Avusturya ile","Girit'in fethi (1669) – 25 yıllık kuşatma","Bucaş Antlaşması (1672) – IV. Mehmed, Lehistan'dan Podolya alındı","II. VİYANA KUŞATMASI (1683) – Merzifonlu Kara Mustafa Paşa başarısızlığı, idam edildi","Kutsal İttifak Savaşları (1683-1699) – Avusturya, Lehistan, Venedik, Rusya","KARLOFÇA ANTLAŞMASI (1699) – II. Mustafa: Macaristan-Avusturya'ya, Mora-Venedik'e, Podolya-Lehistan'a, Azak-Rusya'ya verildi. İLK BÜYÜK TOPRAK KAYBI","İstanbul Antlaşması (1700) – Rusya ile Azak Kalesi"]
       }}
   ],
   enemies:[
@@ -871,6 +953,7 @@ const PERIODS = [
       details:{period:"1547-1721",leaders:["I. Petro"],achievements:["Modernleşme"],culture:[],scientists:[],events:["Karadeniz'e inme politikası"]}}
   ],
   wars:[
+    {from:"Osmanlı İmparatorluğu",to:"Habsburg İmp.",name:"Haçova Meydan Muharebesi",year:"1596",result:"Osmanlı zaferi – III. Mehmed dönemi"},
     {from:"Osmanlı İmparatorluğu",to:"Habsburg İmp.",name:"II. Viyana Kuşatması",year:"1683",result:"Osmanlı başarısızlığı – Gerileme dönemi başladı"},
     {from:"Osmanlı İmparatorluğu",to:"Habsburg İmp.",name:"Kutsal İttifak Savaşları",year:"1683-1699",result:"Karlofça Antlaşması (1699) – İlk büyük toprak kaybı"}
   ]
@@ -883,9 +966,9 @@ const PERIODS = [
       territories:["Turkey","Greece","Bulgaria","Macedonia","Albania","Serbia","Kosovo","Bosnia and Herzegovina","Montenegro","Romania","Moldova","Syria","Iraq","Lebanon","Israel","Jordan","Egypt","Libya","Tunisia","Algeria","Saudi Arabia","Yemen","Cyprus"],
       details:{
         period:"1718 – 1808",
-        significance:"Lale Devri (1718-1730) ile Batı'ya açılma başladı. İlk matbaa (1727) kuruldu. Küçük Kaynarca Antlaşması (1774) Osmanlı tarihinin en ağır antlaşmalarından biridir: Kırım bağımsız oldu (1783'te Rusya ilhak etti), Rusya Ortodoksların koruyucusu oldu. III. Selim Nizam-ı Cedid reformlarıyla modernleşmeye çalıştı ancak Kabakçı Mustafa İsyanı (1807) ile tahttan indirildi.",
-        leaders:["III. Ahmed (Lale Devri)","I. Mahmud","III. Mustafa","III. Selim (Nizam-ı Cedid)"],
-        achievements:["LALE DEVRİ (1718-1730)","İlk matbaa (İbrahim Müteferrika, 1727)","Nizam-ı Cedid ordusu","Daimi elçilikler","Prut Zaferi (1711)","Hendesehane (mühendishane)"],
+        significance:"Karlofça sonrası Osmanlı kaybettiği toprakları geri almak için savaştı. Prut Zaferi (1711) ile Azak geri alındı. Ancak Pasarofça Antlaşması (1718) ile yeni kayıplar yaşandı. Lale Devri (1718-1730) ile Batı'ya açılma başladı. İlk matbaa (1727) kuruldu. Küçük Kaynarca Antlaşması (1774) Osmanlı tarihinin en ağır antlaşmalarından biridir. III. Selim Nizam-ı Cedid reformlarıyla modernleşmeye çalıştı ancak başarısız oldu.",
+        leaders:["III. Ahmed (1703-1730, Lale Devri)","I. Mahmud (1730-1754)","III. Mustafa (1757-1774)","I. Abdülhamid (1774-1789)","III. Selim (1789-1807, Nizam-ı Cedid)"],
+        achievements:["Prut Zaferi (1711)","LALE DEVRİ (1718-1730)","İlk matbaa (İbrahim Müteferrika, 1727)","Nizam-ı Cedid ordusu","Daimi elçilikler kurulması","Hendesehane (mühendishane) açılması"],
         culture:["Lale kültürü","Levni minyatürleri","Nedim şiirleri","Batı etkisinde sanat"],
         scientists:[
           {name:"İbrahim Müteferrika (1674-1745)",work:"Osmanlı'da ilk matbaayı kurdu (1727). Usulü'l-Hikem fi Nizami'l-Ümem (devlet yönetimi). 17 eser bastı.",patron:"III. Ahmed ve Nevşehirli Damat İbrahim Paşa desteğiyle"},
@@ -893,7 +976,7 @@ const PERIODS = [
           {name:"Nedim (?-1730)",work:"Lale Devri'nin en büyük şairi. İstanbul Türkçesiyle yazılan şiirin öncüsü. Şarkı türünün ustası.",patron:"Nevşehirli Damat İbrahim Paşa'nın himayesinde"}
         ],
         architecture:["III. Ahmed Çeşmesi (1728)","Nuruosmaniye Camii (1755) – İlk Barok cami","Laleli Camii (1763)"],
-        events:["Prut Savaşı (1711)","Lale Devri (1718-1730)","Matbaa (1727)","Patrona Halil İsyanı (1730)","1768-1774 Savaşı","KÜÇÜK KAYNARCA (1774)","Kırım'ın kaybı (1783)","Nizam-ı Cedid (1793)","Kabakçı Mustafa İsyanı (1807)"]
+        events:["Edirne Olayı (1703) – II. Mustafa tahttan indirildi","Prut Savaşı (1711) – III. Ahmed, Rusya yenildi, Azak geri alındı","PRUT ANTLAŞMASI (1711) – Rusya Azak'ı geri verdi","1715-1718 Osmanlı-Venedik-Avusturya Savaşı","PASAROFÇA ANTLAŞMASI (1718) – III. Ahmed: Belgrad ve Banat Avusturya'ya, Mora geri alındı ama Sırbistan kaybedildi","LALE DEVRİ BAŞLADI (1718-1730)","İlk matbaa (1727) – İbrahim Müteferrika","Yirmisekiz Çelebi Mehmed Paris elçiliği (1720-21)","İlk itfaiye teşkilatı (Tulumbacılar)","Patrona Halil İsyanı (1730) – III. Ahmed tahttan indirildi, Lale Devri bitti","1736-1739 Osmanlı-Avusturya-Rusya Savaşı","BELGRAD ANTLAŞMASI (1739) – I. Mahmud: Belgrad ve Sırbistan geri alındı, Pasarofça kaybı telafi edildi (XVIII. yy'ın en kazançlı antlaşması)","1768-1774 Osmanlı-Rus Savaşı – III. Mustafa/I. Abdülhamid","Çeşme Deniz Baskını (1770) – Osmanlı donanması yakıldı","KÜÇÜK KAYNARCA ANTLAŞMASI (1774) – I. Abdülhamid: Kırım bağımsız oldu, Rusya Ortodoks koruyucu, Karadeniz'de Rus serbest ticaret, kapitülasyonlar genişledi","Aynalıkavak Tenkihnamesi (1779) – Kırım'a Rus yanlısı han","KIRIM'IN RUSYA TARAFINDAN İLHAKI (1783)","1787-1792 Osmanlı-Rus-Avusturya Savaşı","Yaş Antlaşması (1792) – III. Selim: Kırım kesin kaybedildi","Nizam-ı Cedid ordusu (1793)","Napolyon'un Mısır'ı işgali (1798)","Kabakçı Mustafa İsyanı (1807) – Nizam-ı Cedid kaldırıldı, III. Selim öldürüldü"]
       }}
   ],
   enemies:[
@@ -908,8 +991,10 @@ const PERIODS = [
       details:{period:"Cumhuriyet/İmp.",leaders:["Napolyon"],achievements:["Fransız Devrimi"],culture:[],scientists:[],events:["Mısır işgali (1798)"]}}
   ],
   wars:[
-    {from:"Osmanlı İmparatorluğu",to:"Rusya İmp.",name:"1768-1774 Savaşı",year:"1768-1774",result:"Küçük Kaynarca – Kırım kaybı, Rusya Ortodoks koruyucusu"},
-    {from:"Osmanlı İmparatorluğu",to:"Rusya İmp.",name:"Prut Savaşı",year:"1711",result:"Osmanlı zaferi – Azak geri alındı"}
+    {from:"Osmanlı İmparatorluğu",to:"Rusya İmp.",name:"Prut Savaşı",year:"1711",result:"Osmanlı zaferi – Prut Antlaşması, Azak geri alındı"},
+    {from:"Osmanlı İmparatorluğu",to:"Avusturya",name:"Osmanlı-Avusturya Savaşı",year:"1715-1718",result:"Pasarofça Antlaşması – Belgrad kaybedildi"},
+    {from:"Osmanlı İmparatorluğu",to:"Avusturya",name:"Osmanlı-Avusturya-Rusya Savaşı",year:"1736-1739",result:"Belgrad Antlaşması – Belgrad ve Sırbistan geri alındı"},
+    {from:"Osmanlı İmparatorluğu",to:"Rusya İmp.",name:"1768-1774 Osmanlı-Rus Savaşı",year:"1768-1774",result:"Küçük Kaynarca – Kırım, Ortodoks koruyuculuk"}
   ]
 },
 {
@@ -930,7 +1015,7 @@ const PERIODS = [
           {name:"Şinasi (1826-1871)",work:"Şair Evlenmesi (ilk Türk tiyatro eseri, 1860). Tercüman-ı Ahval gazetesini kurdu (ilk özel gazete, 1860). Batı şiir tekniklerini Türkçeye taşıdı.",patron:"Tanzimat dönemi aydını"}
         ],
         architecture:["Dolmabahçe Sarayı (1856)","Beylerbeyi Sarayı (1865)","Ortaköy Camii (1856)","Haydarpaşa Tıbbiyesi"],
-        events:["Sened-i İttifak (1808)","Yunan İsyanı (1821)","Vaka-i Hayriye (1826)","Tanzimat Fermanı (1839)","Kırım Savaşı (1853-56)","Paris Antlaşması (1856)","Islahat Fermanı (1856)","İlk dış borç (1854)"]
+        events:["Sened-i İttifak (1808) – II. Mahmud: Padişah ilk kez ayanlarla sözleşme yaptı","Yunan İsyanı (1821) – Mora'da başladı","Yunanistan'ın bağımsızlığı (1829) – Edirne Antlaşması","Vaka-i Hayriye (1826) – II. Mahmud: Yeniçeri Ocağı kaldırıldı","Navarin Olayı (1827) – Osmanlı donanması yakıldı (İng-Fr-Rus)","1828-1829 Osmanlı-Rus Savaşı","EDİRNE ANTLAŞMASI (1829) – II. Mahmud: Yunanistan bağımsız, Sırbistan'a özerklik, Eflak-Boğdan ayrıcalık","Osmanlı-Mısır Savaşları (1831-33, 1839-41)","Kütahya Antlaşması (1833) – Kavalalı Mehmed Ali Paşa'ya Suriye verildi","Hünkâr İskelesi Antlaşması (1833) – II. Mahmud ile Rusya: Boğazlar Rusya'ya açıldı (son ittifak)","Londra Boğazlar Sözleşmesi (1841) – Boğazlar tüm savaş gemilerine kapatıldı","TANZİMAT FERMANI (3 Kasım 1839) – Abdülmecid: Can, mal, namus güvencesi; vergi adaleti; kanun önünde eşitlik","İlk nüfus sayımı (1831, sadece erkekler)","İlk gazete: Takvim-i Vekayi (1831)","İlk posta teşkilatı","İlk karantina uygulaması","Kırım Savaşı (1853-56) – Abdülmecid","PARİS ANTLAŞMASI (1856) – Abdülmecid: Osmanlı Avrupa devletler hukukuna dahil, Karadeniz tarafsız, Rusya Ortodoks koruyuculuğu kaldırıldı, Eflak-Boğdan özerkliği","ISLAHAT FERMANI (18 Şubat 1856) – Abdülmecid: Gayrimüslimlere eşit haklar (Paris Kongresi öncesi ilan edildi)","İlk dış borç (1854, Kırım Savaşı nedeniyle)","Abdülaziz dönemi israfı","Abdülaziz'in tahttan indirilmesi ve ölümü (1876)"]
       }}
   ],
   enemies:[
@@ -967,7 +1052,7 @@ const PERIODS = [
           {name:"Halit Ziya Uşaklıgil (1866-1945)",work:"Mai ve Siyah, Aşk-ı Memnu (Yasak Aşk) – Türk edebiyatında ilk modern romanlar.",patron:"Servet-i Fünun dönemi"}
         ],
         architecture:["Hicaz Demiryolu (1900-1908)","Yıldız Sarayı genişletmeleri","Hamidiye Çeşmesi"],
-        events:["I. Meşrutiyet (1876)","93 HARBİ (1877-78)","Plevne Savunması (Gazi Osman Paşa)","Ayastefanos Antlaşması (1878)","Berlin Antlaşması (1878)","Kıbrıs İngiltere'ye (1878)","Tunus Fransa'ya (1881)","Mısır İngiltere'ye (1882)","Duyun-u Umumiye (1881)","Ermeni Olayları (1894-96)"]
+        events:["I. Meşrutiyet (23 Aralık 1876) – II. Abdülhamid, Mithat Paşa baskısıyla","KANUN-İ ESASİ (1876) – İlk Osmanlı Anayasası","93 HARBİ (1877-78) – Osmanlı-Rus Savaşı","Plevne Savunması – Gazi Osman Paşa (5 ay direniş)","AYASTEFANOS (YEŞİLKÖY) ANTLAŞMASI (3 Mart 1878) – Çok ağır şartlar, büyük Bulgaristan kurulacaktı","BERLİN ANTLAŞMASI (13 Temmuz 1878) – II. Abdülhamid: Ayastefanos hafifletildi; Sırbistan-Karadağ-Romanya tam bağımsız; Bulgaristan küçültüldü; Bosna-Hersek Avusturya idaresine; Kars-Ardahan-Batum Rusya'ya; Kıbrıs İngiltere'ye","Meclis-i Mebusan kapatıldı (1878) – İstibdat dönemi başladı","Kıbrıs İngiltere'ye kiralandı (1878)","Tunus Fransa tarafından işgal (1881)","Mısır İngiltere tarafından işgal (1882)","DUYUN-U UMUMİYE İDARESİ (1881) – Osmanlı dış borçlarını yönetmek için kurulan yabancı kuruluş","Hicaz Demiryolu yapımı (1900-1908)","Girit'in fiilen kaybı","1897 Osmanlı-Yunan Savaşı (Dömeke Meydan Muharebesi) – Osmanlı zaferi","Makedonya sorunu","Ermeni olayları (1890'lar)","İttihat ve Terakki Cemiyeti gizli örgütlenmesi"]
       }}
   ],
   enemies:[
@@ -1007,7 +1092,7 @@ const PERIODS = [
           {name:"Mehmed Akif Ersoy (1873-1936)",work:"Safahat (7 kitaplık şiir külliyatı). İstiklal Marşı şairi (1921).",patron:"Milli Mücadele döneminin manevi sesi"}
         ],
         architecture:[],
-        events:["II. Meşrutiyet (1908)","31 Mart Olayı (1909)","Trablusgarp Savaşı (1911-12)","I. Balkan Savaşı (1912) – Edirne düştü","Bab-ı Ali Baskını (1913)","II. Balkan Savaşı – Edirne geri alındı","Bükreş/İstanbul Antlaşması (1913)"]
+        events:["II. Meşrutiyet (23 Temmuz 1908) – İttihat ve Terakki baskısı ile Kanun-i Esasi yeniden yürürlükte","Bulgaristan bağımsızlığını ilan etti (1908)","Avusturya-Macaristan Bosna-Hersek'i ilhak etti (1908)","Girit Yunanistan'a katıldı (1908)","31 Mart Olayı (13 Nisan 1909) – Gerici isyan, Hareket Ordusu bastırdı","II. Abdülhamid tahttan indirildi, V. Mehmed Reşad tahta çıktı (1909)","Trablusgarp Savaşı (1911-12) – İtalya'ya karşı","UŞİ (OUCHY) ANTLAŞMASI (1912) – Trablusgarp ve Bingazi İtalya'ya","I. BALKAN SAVAŞI (Ekim 1912-Mayıs 1913) – Bulgaristan, Sırbistan, Yunanistan, Karadağ ittifakı","Edirne düştü (Mart 1913)","LONDRA ANTLAŞMASI (Mayıs 1913) – Midye-Enez hattı batısı kaybedildi","Bab-ı Ali Baskını (23 Ocak 1913) – Enver Paşa darbe ile iktidarı ele geçirdi","II. BALKAN SAVAŞI (Haziran-Temmuz 1913) – Bulgaristan'a karşı","Edirne geri alındı – Şükrü Paşa","İSTANBUL ANTLAŞMASI (1913) – Bulgaristan ile, Edirne-Kırklareli Osmanlı'da kaldı","BÜKREŞ ANTLAŞMASI (1913) – Balkan devletleri arası, Makedonya paylaşıldı","ATİNA ANTLAŞMASI (1913) – Yunanistan ile, Girit kesin kaybedildi"]
       }}
   ],
   enemies:[
@@ -1192,7 +1277,7 @@ function render() {
   renderTimeline();
   overlay.innerHTML = '';
   
-  // Tüm haritayı sıfırla
+  // Tüm haritayı sıfırla (hem name hem class path'leri)
   document.querySelectorAll('#map-svg-wrap svg path').forEach(path => {
     path.style.fill = '#2a3441';
   });
@@ -1431,6 +1516,65 @@ function updateSpeed() {
   speedLabel.textContent = speedSlider.value + 's';
   if(playing) { clearInterval(playInterval); togglePlay(); togglePlay(); }
 }
+
+// ====== ZOOM & PAN ======
+let zoomScale = 1, panX = 0, panY = 0;
+const mapScaler = document.getElementById('map-scaler');
+const mapContainer = document.getElementById('map-container');
+
+function applyTransform() {
+  mapScaler.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomScale})`;
+  document.getElementById('zoom-level').textContent = Math.round(zoomScale*100)+'%';
+}
+function zoomIn() { zoomScale = Math.min(5, zoomScale * 1.3); applyTransform(); }
+function zoomOut() { zoomScale = Math.max(0.5, zoomScale / 1.3); if(zoomScale<1.05&&zoomScale>0.95){zoomScale=1;panX=0;panY=0;} applyTransform(); }
+function zoomReset() { zoomScale=1; panX=0; panY=0; applyTransform(); }
+
+mapContainer.addEventListener('wheel', e => {
+  e.preventDefault();
+  if(e.deltaY < 0) zoomScale = Math.min(5, zoomScale * 1.12);
+  else zoomScale = Math.max(0.5, zoomScale / 1.12);
+  if(zoomScale<1.05&&zoomScale>0.95){zoomScale=1;panX=0;panY=0;}
+  applyTransform();
+}, {passive:false});
+
+let isDragging=false, dragStartX=0, dragStartY=0, startPanX=0, startPanY=0;
+mapScaler.addEventListener('mousedown', e => {
+  if(zoomScale<=1) return;
+  isDragging=true; dragStartX=e.clientX; dragStartY=e.clientY;
+  startPanX=panX; startPanY=panY;
+  mapScaler.classList.add('dragging');
+});
+document.addEventListener('mousemove', e => {
+  if(!isDragging) return;
+  panX = startPanX + (e.clientX - dragStartX);
+  panY = startPanY + (e.clientY - dragStartY);
+  applyTransform();
+});
+document.addEventListener('mouseup', () => { isDragging=false; mapScaler.classList.remove('dragging'); });
+
+// Touch zoom & pan
+let lastTouchDist=0;
+mapContainer.addEventListener('touchstart', e => {
+  if(e.touches.length===2){
+    lastTouchDist = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+  } else if(e.touches.length===1 && zoomScale>1){
+    isDragging=true; dragStartX=e.touches[0].clientX; dragStartY=e.touches[0].clientY;
+    startPanX=panX; startPanY=panY;
+  }
+},{passive:true});
+mapContainer.addEventListener('touchmove', e => {
+  if(e.touches.length===2){
+    const dist = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+    if(lastTouchDist>0){ zoomScale = Math.min(5, Math.max(0.5, zoomScale * (dist/lastTouchDist))); applyTransform(); }
+    lastTouchDist=dist;
+  } else if(isDragging && e.touches.length===1){
+    panX = startPanX + (e.touches[0].clientX - dragStartX);
+    panY = startPanY + (e.touches[0].clientY - dragStartY);
+    applyTransform();
+  }
+},{passive:true});
+mapContainer.addEventListener('touchend', () => { isDragging=false; lastTouchDist=0; });
 
 document.addEventListener('keydown', e => {
   if(e.key==='ArrowRight') nextPeriod();
