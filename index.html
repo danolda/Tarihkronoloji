@@ -263,6 +263,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg-dark);color:var(--text
       <button class="ctrl-btn" onclick="prevPeriod()">◀</button>
       <button class="ctrl-btn play" id="play-btn" onclick="togglePlay()">▶ Oynat</button>
       <button class="ctrl-btn" onclick="nextPeriod()">▶</button>
+      <button class="ctrl-btn" id="audio-btn" onclick="toggleAudio()" style="margin-left:6px;background:rgba(138,106,191,0.12);border-color:rgba(138,106,191,0.35);color:#c4aaff">🎙 Anlatım</button>
       <div id="speed-control">
         <span>Hız:</span>
         <input type="range" id="speed-slider" min="1" max="10" value="4" oninput="updateSpeed()">
@@ -1398,23 +1399,24 @@ function render() {
   // === TÜRKİYE İL HARİTASI (Beylikler dönemleri için) ===
   const isBeylikPeriod = [1077, 1299].includes(p.year);
   if(isBeylikPeriod && trSvgLoaded) {
-    // Türkiye'nin world.svg'deki gerçek koordinatları (SVG 2000x857)
-    // Turkey paths: x=1121.5-1223.5, y=231.5-271.8
-    const trLeft = 1121.5 / 2000 * 100;   // 56.08%
-    const trTop = 231.5 / 857 * 100;      // 27.02%
-    const trRight = 1223.5 / 2000 * 100;  // 61.18%
-    const trBottom = 271.8 / 857 * 100;   // 31.72%
-    // tr.svg iç padding kompanzasyonu (paths 0.1-938 arası, yani %93.8 doluluk)
-    const trW = (trRight - trLeft) / 0.938;
-    const trH = (trBottom - trTop) / 0.917;
+    // Bbox eşleme: tr.svg content bbox (paths) → world.svg Turkey bbox
     trSvgWrap.style.display = 'block';
-    trSvgWrap.style.left = trLeft + '%';
-    trSvgWrap.style.top = trTop + '%';
-    trSvgWrap.style.width = trW + '%';
-    trSvgWrap.style.height = trH + '%';
+    trSvgWrap.style.left = '56.18%';
+    trSvgWrap.style.top = '27.19%';
+    trSvgWrap.style.width = '5.32%';
+    trSvgWrap.style.height = '4.94%';
+    // Dünya haritasındaki Türkiye path'lerini tamamen gizle
+    document.querySelectorAll('#map-svg-wrap svg path').forEach(el => {
+      const cls = el.getAttribute('class') || '';
+      const nm = el.getAttribute('name') || '';
+      if(cls === 'Turkey' || nm === 'Turkey') {
+        el.style.fill = 'transparent';
+        el.style.stroke = 'transparent';
+      }
+    });
     // Tüm illeri temizle
     document.querySelectorAll('#tr-svg-wrap svg path').forEach(path => {
-      path.style.fill = 'rgba(40,50,60,0.5)';
+      path.style.fill = 'rgba(40,50,60,0.6)';
     });
     // Beyliklerin illerini boya
     if(p.states) {
@@ -1427,6 +1429,13 @@ function render() {
     }
   } else {
     trSvgWrap.style.display = 'none';
+    document.querySelectorAll('#map-svg-wrap svg path').forEach(el => {
+      const cls = el.getAttribute('class') || '';
+      const nm = el.getAttribute('name') || '';
+      if(cls === 'Turkey' || nm === 'Turkey') {
+        el.style.stroke = '';
+      }
+    });
   }
 
   // Savaş çizgileri ve rozetleri
@@ -1486,7 +1495,8 @@ function render() {
   }
   
   infoBox.className = detailPanel.classList.contains('open') ? 'shifted' : '';
-  applyTransform(); // Zoom seviyesini yeni markerlara uygula
+  applyTransform();
+  playPeriodAudio(); // Zoom seviyesini yeni markerlara uygula
 }
 
 function createMarker(state, pos, type, isSmall) {
@@ -1671,6 +1681,57 @@ function updateSpeed() {
   speed = speedSlider.value * 1000;
   speedLabel.textContent = speedSlider.value + 's';
   if(playing) { clearInterval(playInterval); togglePlay(); togglePlay(); }
+}
+
+// ====== AUDIO PODCAST ======
+const AUDIO_FILES = {
+  '-220': '01_buyuk_hun_imparatorlugu.mp3',
+  '375': '02_kavimler_gocu_avrupa_hun.mp3',
+  '552': '03_gokturk_kaganligi.mp3',
+  '682': '04_kutluk_gokturk.mp3',
+  '745': '05_uygur_kaganligi.mp3',
+  '940': '06_ilk_musluman_turk.mp3',
+  '1040': '07_buyuk_selcuklu.mp3',
+  '1077': '08_anadolu_selcuklu.mp3',
+  '1299': '09_beylikler_osmanli_kurulus.mp3',
+  '1389': '10_osmanli_balkanlar.mp3',
+  '1453': '11_istanbul_fethi.mp3',
+  '1520': '12_osmanli_yukselis.mp3',
+  '1683': '13_duraklama_viyana.mp3',
+  '1774': '14_gerileme_kaynarca.mp3',
+  '1839': '15_tanzimat.mp3',
+  '1878': '16_93_harbi_mesrutiyet.mp3',
+  '1912': '17_balkan_savaslari.mp3',
+  '1915': '18_dunya_savasi_canakkale.mp3',
+  '1919': '19_milli_mucadele.mp3',
+  '1922': '20_kurtulus_cumhuriyet.mp3'
+};
+let audioPlayer = null;
+let audioEnabled = false;
+
+function toggleAudio() {
+  audioEnabled = !audioEnabled;
+  const btn = document.getElementById('audio-btn');
+  if(audioEnabled) {
+    btn.textContent = '🔊 Anlatım Açık';
+    btn.style.background = 'rgba(138,106,191,0.25)';
+    playPeriodAudio();
+  } else {
+    btn.textContent = '🎙 Anlatım';
+    btn.style.background = 'rgba(138,106,191,0.12)';
+    if(audioPlayer) { audioPlayer.pause(); audioPlayer = null; }
+  }
+}
+
+function playPeriodAudio() {
+  if(!audioEnabled) return;
+  if(audioPlayer) { audioPlayer.pause(); }
+  const p = PERIODS[currentIdx];
+  const file = AUDIO_FILES[String(p.year)];
+  if(!file) return;
+  audioPlayer = new Audio(file);
+  audioPlayer.volume = 0.8;
+  audioPlayer.play().catch(()=>{}); // Sessizce başarısız olabilir (dosya yoksa)
 }
 
 // ====== ZOOM & PAN ======
